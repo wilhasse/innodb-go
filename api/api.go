@@ -6,6 +6,7 @@ import (
 
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/buf"
+	"github.com/wilhasse/innodb-go/dict"
 	"github.com/wilhasse/innodb-go/fil"
 	"github.com/wilhasse/innodb-go/fsp"
 	"github.com/wilhasse/innodb-go/log"
@@ -68,6 +69,7 @@ func Startup(format string) ErrCode {
 		return DB_ERROR
 	}
 	_ = fil.SpaceCreate("log", 1, 0, fil.SpaceLog)
+	dict.DictBootstrap()
 	var bufSize uint64
 	if err := CfgGet("buffer_pool_size", &bufSize); err == DB_SUCCESS && bufSize > 0 {
 		pageSize := buf.BufPoolDefaultPageSize

@@ -109,6 +109,7 @@ func DictBoot() {
 	DictSys.RowID = dulintAdd(dulintAlignUp(DictSys.Header.RowID, DictHdrRowIDWriteMargin), DictHdrRowIDWriteMargin)
 
 	createSysTables()
+	initSysRows()
 }
 
 // DictCreate creates the dictionary header and boots the dictionary.

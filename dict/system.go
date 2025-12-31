@@ -32,6 +32,7 @@ type System struct {
 	SysColumns *Table
 	SysIndexes *Table
 	SysFields  *Table
+	SysRows    SysRows
 }
 
 // DictSys is the global dictionary system.

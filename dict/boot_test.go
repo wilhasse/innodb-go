@@ -22,6 +22,29 @@ func TestDictCreateBoot(t *testing.T) {
 	}
 }
 
+func TestDictBootstrapSysRows(t *testing.T) {
+	DictBootstrap()
+
+	if DictSys == nil {
+		t.Fatalf("expected DictSys to be initialized")
+	}
+	if len(DictSys.SysRows.Tables) < 4 {
+		t.Fatalf("expected sys table rows, got %d", len(DictSys.SysRows.Tables))
+	}
+	names := map[string]bool{}
+	for _, row := range DictSys.SysRows.Tables {
+		if row == nil || len(row.Fields) == 0 {
+			continue
+		}
+		names[string(row.Fields[0].Data)] = true
+	}
+	for _, name := range []string{"SYS_TABLES", "SYS_COLUMNS", "SYS_INDEXES", "SYS_FIELDS"} {
+		if !names[name] {
+			t.Fatalf("missing sys table row for %s", name)
+		}
+	}
+}
+
 func TestDictHdrGetNewID(t *testing.T) {
 	DictCreate()
 
