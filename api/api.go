@@ -69,6 +69,7 @@ func Startup(format string) ErrCode {
 		return DB_ERROR
 	}
 	_ = fil.SpaceCreate("log", 1, 0, fil.SpaceLog)
+	dict.SetDataDir(dataHomeDir())
 	dict.DictBootstrap()
 	var bufSize uint64
 	if err := CfgGet("buffer_pool_size", &bufSize); err == DB_SUCCESS && bufSize > 0 {
