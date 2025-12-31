@@ -40,3 +40,8 @@
 - Go mapping:
   - `Cur.SearchToNthLevel` traverses the in-memory tree, positions the cursor, and captures path info.
   - `Cur.OpenAtIndexSide`/`Cur.OpenAtRandom` now record path metadata for future splits.
+
+## IBGO-142: Cursor navigation across pages
+- C refs: `btr/btr0btr.c` (btr_get_prev_user_rec, btr_get_next_user_rec), `btr/btr0pcur.c`
+- Go mapping:
+  - `btr.GetNextUserRec`/`btr.GetPrevUserRec` step across linked pages via `page.Page` prev/next pointers.
