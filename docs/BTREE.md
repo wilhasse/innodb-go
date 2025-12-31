@@ -94,3 +94,9 @@
 - C refs: `btr/btr0cur.c` (estimate helpers), `btr/btr0btr.c` (size)
 - Go mapping:
   - `EstimateNRowsInRange` and `EstimateNumberOfDifferentKeyVals` scan visible keys for deterministic estimates.
+
+## IBGO-151: External fields / BLOB
+- C refs: `btr/btr0cur.c` (extern field helpers)
+- Go mapping:
+  - `StoreBigRecExternFields` stores large values in `fil` external storage with a compact ref.
+  - `RecGetExternallyStoredLen`, `CopyExternallyStoredFieldPrefix`, and `RecFreeExternallyStoredFields` manage refs.

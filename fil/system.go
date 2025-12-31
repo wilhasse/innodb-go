@@ -71,6 +71,7 @@ func VarInit() {
 	NLogFlushes = 0
 	NPendingLogFlushes = 0
 	NPendingTablespaceFlushes = 0
+	externReset()
 }
 
 // SpaceCreate registers a tablespace or log space.
