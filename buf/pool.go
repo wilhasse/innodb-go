@@ -123,6 +123,24 @@ func (p *Pool) MarkDirty(page *Page) {
 	page.Dirty = true
 }
 
+// Drop removes a page from the pool by id.
+func (p *Pool) Drop(space, pageNo uint32) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	id := PageID{Space: space, PageNo: pageNo}
+	page := p.pages[id]
+	if page == nil {
+		return
+	}
+	delete(p.pages, id)
+	if page.lruElem != nil {
+		p.lru.Remove(page)
+	}
+}
+
 // Flush clears dirty flags and returns the number of pages flushed.
 func (p *Pool) Flush() int {
 	if p == nil {

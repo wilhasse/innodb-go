@@ -11,6 +11,9 @@ var currentFreeLimit uint32
 // Init initializes the file space subsystem.
 func Init() {
 	currentFreeLimit = 0
+	allocMu.Lock()
+	allocs = map[uint32]*spaceAlloc{}
+	allocMu.Unlock()
 }
 
 // HeaderGetFreeLimit returns the current free limit of space 0.

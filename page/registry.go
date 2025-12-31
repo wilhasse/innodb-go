@@ -55,6 +55,22 @@ func (r *Registry) Delete(spaceID, pageNo uint32) {
 	r.mu.Unlock()
 }
 
+// Count returns the number of pages for a space.
+func (r *Registry) Count(spaceID uint32) int {
+	if r == nil {
+		return 0
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	count := 0
+	for key := range r.pages {
+		if key.spaceID == spaceID {
+			count++
+		}
+	}
+	return count
+}
+
 // NewPage allocates a page, initializes it, and registers it.
 func (r *Registry) NewPage(spaceID, pageNo uint32, pageType uint16) *Page {
 	if r == nil {

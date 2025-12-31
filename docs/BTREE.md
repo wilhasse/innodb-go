@@ -20,3 +20,10 @@
   - `btr.NodePtrSetChildPageNo`/`btr.NodePtrGetChild` store child page numbers in node pointer records.
   - `page.Page` tracks `ParentPageNo` for parent lookups via `page.Registry`.
   - `btr.PageGetFatherBlock`/`btr.PageGetFatherNodePtr`/`btr.PageGetFather` walk parent linkage.
+
+## IBGO-139: Page alloc/free + size
+- C refs: `btr/btr0btr.c` (page alloc/free, btr_get_size), `fsp/fsp0fsp.c`, `buf/buf0buf.c`
+- Go mapping:
+  - `fsp.AllocPage`/`fsp.FreePage` manage a per-space free list and grow `fil.Space` size.
+  - `btr.PageAlloc`/`btr.PageFree` wire allocation to `page.Registry` and optional `buf` pool.
+  - `btr.GetSize` counts allocated pages per space via the registry.
