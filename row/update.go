@@ -14,7 +14,18 @@ func (store *Store) UpdateByKey(key data.Field, updates map[int]data.Field) (*da
 	if store == nil {
 		return nil, errors.New("row: nil store")
 	}
-	row := store.SelectByKey(key)
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	var row *data.Tuple
+	for _, candidate := range store.Rows {
+		if candidate == nil || store.PrimaryKey < 0 || store.PrimaryKey >= len(candidate.Fields) {
+			continue
+		}
+		if fieldsEqualPrefix(key, candidate.Fields[store.PrimaryKey], store.PrimaryKeyPrefix) {
+			row = candidate
+			break
+		}
+	}
 	if row == nil {
 		return nil, ErrRowNotFound
 	}
@@ -27,6 +38,8 @@ func (store *Store) UpdateWhere(fn func(*data.Tuple) bool, updates map[int]data.
 	if store == nil || fn == nil {
 		return 0
 	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
 	updated := 0
 	for _, row := range store.Rows {
 		if fn(row) {

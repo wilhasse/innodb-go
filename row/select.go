@@ -7,6 +7,8 @@ func (store *Store) SelectAll() []*data.Tuple {
 	if store == nil {
 		return nil
 	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
 	return append([]*data.Tuple(nil), store.Rows...)
 }
 
@@ -15,6 +17,8 @@ func (store *Store) SelectByKey(key data.Field) *data.Tuple {
 	if store == nil || store.PrimaryKey < 0 {
 		return nil
 	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
 	for _, row := range store.Rows {
 		if row == nil || store.PrimaryKey >= len(row.Fields) {
 			continue
@@ -31,6 +35,8 @@ func (store *Store) SelectWhere(fn func(*data.Tuple) bool) []*data.Tuple {
 	if store == nil || fn == nil {
 		return nil
 	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
 	var out []*data.Tuple
 	for _, row := range store.Rows {
 		if fn(row) {

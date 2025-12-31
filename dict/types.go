@@ -19,6 +19,9 @@ type Index struct {
 	Unique    bool
 	Clustered bool
 	RootPage  uint32
+	TreeLevel uint32
+	SpaceID   uint32
+	ZipSize   uint32
 }
 
 // Table describes a dictionary table.

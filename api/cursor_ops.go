@@ -2,8 +2,10 @@ package api
 
 import (
 	"bytes"
+	"errors"
 
 	"github.com/wilhasse/innodb-go/data"
+	"github.com/wilhasse/innodb-go/row"
 )
 
 // CursorSetLockMode sets the cursor lock mode (stub).
@@ -43,41 +45,54 @@ func CursorUpdateRow(crsr *Cursor, oldTpl, newTpl *data.Tuple) ErrCode {
 	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil || oldTpl == nil || newTpl == nil {
 		return DB_ERROR
 	}
+	if crsr.treeCur != nil && crsr.treeCur.Valid() {
+		crsr.lastKey = crsr.treeCur.Key()
+	}
 	store := crsr.Table.Store
-	index := -1
+	var target *data.Tuple
 	if len(store.PrimaryKeyFields) > 0 {
-		for i, row := range store.Rows {
+		for _, row := range store.Rows {
 			if row == nil {
 				continue
 			}
 			if tupleKeyEqual(row, oldTpl, store.PrimaryKeyFields, store.PrimaryKeyPrefixes) {
-				index = i
+				target = row
 				break
 			}
 		}
 	} else if store.PrimaryKey >= 0 && store.PrimaryKey < len(oldTpl.Fields) {
 		keyField := oldTpl.Fields[store.PrimaryKey]
-		for i, row := range store.Rows {
+		for _, row := range store.Rows {
 			if row == nil || store.PrimaryKey >= len(row.Fields) {
 				continue
 			}
 			if fieldEqualPrefix(keyField, row.Fields[store.PrimaryKey], store.PrimaryKeyPrefix) {
-				index = i
+				target = row
 				break
 			}
 		}
 	} else {
-		for i, row := range store.Rows {
+		for _, row := range store.Rows {
 			if tupleEqual(row, oldTpl) {
-				index = i
+				target = row
 				break
 			}
 		}
 	}
-	if index < 0 {
+	if target == nil {
 		return DB_RECORD_NOT_FOUND
 	}
-	store.Rows[index] = cloneTuple(newTpl)
+	cloned := cloneTuple(newTpl)
+	if err := store.ReplaceTuple(target, cloned); err != nil {
+		if errors.Is(err, row.ErrDuplicateKey) {
+			return DB_DUPLICATE_KEY
+		}
+		if errors.Is(err, row.ErrRowNotFound) {
+			return DB_RECORD_NOT_FOUND
+		}
+		return DB_ERROR
+	}
+	crsr.treeCur = nil
 	return DB_SUCCESS
 }
 
@@ -86,16 +101,17 @@ func CursorDeleteRow(crsr *Cursor) ErrCode {
 	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil {
 		return DB_ERROR
 	}
-	if crsr.pos < 0 || crsr.pos >= len(crsr.Table.Store.Rows) {
+	row, ok := cursorRow(crsr)
+	if !ok {
 		return DB_RECORD_NOT_FOUND
 	}
-	rows := crsr.Table.Store.Rows
-	copy(rows[crsr.pos:], rows[crsr.pos+1:])
-	rows = rows[:len(rows)-1]
-	crsr.Table.Store.Rows = rows
-	if crsr.pos >= len(rows) {
-		crsr.pos = len(rows) - 1
+	if crsr.treeCur != nil && crsr.treeCur.Valid() {
+		crsr.lastKey = crsr.treeCur.Key()
 	}
+	if !crsr.Table.Store.RemoveTuple(row) {
+		return DB_RECORD_NOT_FOUND
+	}
+	crsr.treeCur = nil
 	return DB_SUCCESS
 }
 

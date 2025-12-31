@@ -19,7 +19,15 @@ func MergeStores(left, right *Store) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store{Rows: rows, PrimaryKey: left.PrimaryKey}, nil
+	merged := &Store{
+		Rows:               rows,
+		PrimaryKey:         left.PrimaryKey,
+		PrimaryKeyPrefix:   left.PrimaryKeyPrefix,
+		PrimaryKeyFields:   append([]int(nil), left.PrimaryKeyFields...),
+		PrimaryKeyPrefixes: append([]int(nil), left.PrimaryKeyPrefixes...),
+	}
+	merged.rebuildIndex()
+	return merged, nil
 }
 
 // MergeTuples merges two sorted tuple slices by key field.

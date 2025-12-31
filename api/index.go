@@ -4,6 +4,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/trx"
 )
 
@@ -48,7 +49,11 @@ func CursorOpenIndexUsingName(crsr *Cursor, indexName string, out **Cursor) ErrC
 	}
 	for _, idx := range crsr.Table.Schema.Indexes {
 		if idx != nil && strings.EqualFold(idx.Name, indexName) {
-			*out = &Cursor{Table: crsr.Table, pos: 0}
+			var tree *btr.Tree
+			if crsr.Table.Store != nil {
+				tree = crsr.Table.Store.Tree
+			}
+			*out = &Cursor{Table: crsr.Table, Tree: tree, Trx: crsr.Trx, MatchMode: crsr.MatchMode}
 			return DB_SUCCESS
 		}
 	}

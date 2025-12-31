@@ -6,6 +6,7 @@ import (
 	"errors"
 	"strings"
 
+	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
 	"github.com/wilhasse/innodb-go/row"
 	"github.com/wilhasse/innodb-go/trx"
@@ -39,7 +40,9 @@ const (
 // Cursor provides simple table iteration.
 type Cursor struct {
 	Table     *Table
-	pos       int
+	Tree      *btr.Tree
+	treeCur   *btr.Cursor
+	lastKey   []byte
 	Trx       *trx.Trx
 	MatchMode MatchMode
 }
@@ -53,7 +56,11 @@ func CursorOpenTable(name string, trx *trx.Trx, out **Cursor) ErrCode {
 	if table == nil {
 		return DB_TABLE_NOT_FOUND
 	}
-	*out = &Cursor{Table: table, pos: 0, Trx: trx, MatchMode: IB_CLOSEST_MATCH}
+	var tree *btr.Tree
+	if table.Store != nil {
+		tree = table.Store.Tree
+	}
+	*out = &Cursor{Table: table, Tree: tree, Trx: trx, MatchMode: IB_CLOSEST_MATCH}
 	return DB_SUCCESS
 }
 
@@ -81,7 +88,8 @@ func CursorReset(crsr *Cursor) ErrCode {
 	if crsr == nil {
 		return DB_ERROR
 	}
-	crsr.pos = 0
+	crsr.treeCur = nil
+	crsr.lastKey = nil
 	return DB_SUCCESS
 }
 
@@ -124,44 +132,89 @@ func validateNotNull(crsr *Cursor, tpl *data.Tuple) ErrCode {
 
 // CursorFirst positions the cursor at the first row.
 func CursorFirst(crsr *Cursor) ErrCode {
-	if crsr == nil || crsr.Table == nil {
+	if crsr == nil || crsr.Table == nil || crsr.Tree == nil {
 		return DB_ERROR
 	}
-	crsr.pos = 0
-	if len(crsr.Table.Store.Rows) == 0 {
+	cur := crsr.Tree.First()
+	if cur == nil || !cur.Valid() {
 		return DB_RECORD_NOT_FOUND
 	}
+	crsr.treeCur = cur
+	crsr.lastKey = cur.Key()
 	return DB_SUCCESS
 }
 
 // CursorNext advances the cursor.
 func CursorNext(crsr *Cursor) ErrCode {
-	if crsr == nil || crsr.Table == nil {
+	if crsr == nil || crsr.Table == nil || crsr.Tree == nil {
 		return DB_ERROR
 	}
-	crsr.pos++
-	if crsr.pos >= len(crsr.Table.Store.Rows) {
+	if crsr.treeCur != nil && crsr.treeCur.Valid() {
+		crsr.lastKey = crsr.treeCur.Key()
+		if !crsr.treeCur.Next() {
+			crsr.treeCur = nil
+			return DB_END_OF_INDEX
+		}
+		crsr.lastKey = crsr.treeCur.Key()
+		return DB_SUCCESS
+	}
+	if len(crsr.lastKey) == 0 {
 		return DB_END_OF_INDEX
 	}
+	cur := crsr.Tree.Seek(crsr.lastKey)
+	if cur == nil || !cur.Valid() {
+		return DB_END_OF_INDEX
+	}
+	if row.CompareKeys(cur.Key(), crsr.lastKey) == 0 {
+		if !cur.Next() {
+			return DB_END_OF_INDEX
+		}
+	}
+	if !cur.Valid() {
+		return DB_END_OF_INDEX
+	}
+	crsr.treeCur = cur
+	crsr.lastKey = cur.Key()
 	return DB_SUCCESS
 }
 
 // CursorReadRow reads the current row into tpl.
 func CursorReadRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
-	if crsr == nil || crsr.Table == nil || tpl == nil {
+	if crsr == nil || crsr.Table == nil || crsr.Tree == nil || tpl == nil {
 		return DB_ERROR
 	}
-	if crsr.pos < 0 || crsr.pos >= len(crsr.Table.Store.Rows) {
+	if crsr.treeCur == nil || !crsr.treeCur.Valid() {
 		return DB_RECORD_NOT_FOUND
 	}
-	row := crsr.Table.Store.Rows[crsr.pos]
+	row, ok := cursorRow(crsr)
+	if !ok {
+		return DB_RECORD_NOT_FOUND
+	}
 	copyTuple(tpl, row)
 	return DB_SUCCESS
 }
 
+func cursorRow(crsr *Cursor) (*data.Tuple, bool) {
+	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil {
+		return nil, false
+	}
+	if crsr.treeCur == nil || !crsr.treeCur.Valid() {
+		return nil, false
+	}
+	rowID, ok := row.DecodeRowID(crsr.treeCur.Value())
+	if !ok {
+		return nil, false
+	}
+	rowTuple := crsr.Table.Store.RowByID(rowID)
+	if rowTuple == nil {
+		return nil, false
+	}
+	return rowTuple, true
+}
+
 // CursorMoveTo positions the cursor based on a search tuple.
 func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrCode {
-	if crsr == nil || crsr.Table == nil || tpl == nil {
+	if crsr == nil || crsr.Table == nil || crsr.Tree == nil || tpl == nil {
 		return DB_ERROR
 	}
 	keyFields := searchFieldCount(tpl)
@@ -174,31 +227,62 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 	}
 	exactRequired := crsr.MatchMode == IB_EXACT_MATCH
 	prefixRequired := crsr.MatchMode == IB_EXACT_PREFIX
-
-	for i, row := range crsr.Table.Store.Rows {
-		if row == nil {
+	if crsr.Table.Store == nil {
+		return DB_ERROR
+	}
+	searchKey := crsr.Table.Store.KeyForSearch(tpl, keyFields)
+	if len(searchKey) == 0 {
+		return DB_ERROR
+	}
+	cur := crsr.Tree.Seek(searchKey)
+	for cur != nil && cur.Valid() {
+		rowID, ok := row.DecodeRowID(cur.Value())
+		if !ok {
+			if !cur.Next() {
+				break
+			}
 			continue
 		}
-		cmp := compareTuplePrefix(row, tpl, keyFields)
+		rowTuple := crsr.Table.Store.RowByID(rowID)
+		if rowTuple == nil {
+			if !cur.Next() {
+				break
+			}
+			continue
+		}
+		cmp := compareTuplePrefix(rowTuple, tpl, keyFields)
 		switch mode {
 		case CursorGE:
 			if cmp < 0 {
+				if !cur.Next() {
+					return DB_RECORD_NOT_FOUND
+				}
 				continue
 			}
 		case CursorG:
 			if cmp <= 0 {
+				if !cur.Next() {
+					return DB_RECORD_NOT_FOUND
+				}
 				continue
 			}
 		}
-		if prefixRequired && !tupleHasPrefix(row, tpl, keyFields) {
+		if prefixRequired && !tupleHasPrefix(rowTuple, tpl, keyFields) {
+			if !cur.Next() {
+				return DB_RECORD_NOT_FOUND
+			}
 			continue
 		}
 		if exactRequired {
 			if cmp != 0 || (pkFields > 0 && keyFields != pkFields) {
+				if !cur.Next() {
+					return DB_RECORD_NOT_FOUND
+				}
 				continue
 			}
 		}
-		crsr.pos = i
+		crsr.treeCur = cur
+		crsr.lastKey = cur.Key()
 		if ret != nil {
 			if cmp == 0 && (pkFields == 0 || keyFields == pkFields) {
 				*ret = 0

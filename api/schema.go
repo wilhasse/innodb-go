@@ -59,8 +59,8 @@ type Database struct {
 }
 
 var (
-	schemaMu   sync.Mutex
-	databases  = map[string]*Database{}
+	schemaMu    sync.Mutex
+	databases   = map[string]*Database{}
 	nextTableID uint64
 )
 
@@ -272,7 +272,9 @@ func TableTruncate(name string, tableID *uint64) ErrCode {
 	if table == nil {
 		return DB_TABLE_NOT_FOUND
 	}
-	table.Store.Rows = nil
+	if table.Store != nil {
+		table.Store.Reset()
+	}
 	table.ID = atomic.AddUint64(&nextTableID, 1)
 	if tableID != nil {
 		*tableID = table.ID

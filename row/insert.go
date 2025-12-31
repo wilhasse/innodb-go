@@ -3,7 +3,9 @@ package row
 import (
 	"bytes"
 	"errors"
+	"sync"
 
+	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
 )
 
@@ -17,11 +19,18 @@ type Store struct {
 	PrimaryKeyPrefix   int
 	PrimaryKeyFields   []int
 	PrimaryKeyPrefixes []int
+	Tree               *btr.Tree
+	nextRowID          uint64
+	rowsByID           map[uint64]*data.Tuple
+	idByRow            map[*data.Tuple]uint64
+	mu                 sync.RWMutex
 }
 
 // NewStore creates a row store with a primary key field index.
 func NewStore(primaryKey int) *Store {
-	return &Store{PrimaryKey: primaryKey}
+	store := &Store{PrimaryKey: primaryKey}
+	store.ensureIndex()
+	return store
 }
 
 // Insert adds a tuple, enforcing primary key uniqueness when configured.
@@ -29,10 +38,25 @@ func (store *Store) Insert(tuple *data.Tuple) error {
 	if store == nil || tuple == nil {
 		return errors.New("row: nil store or tuple")
 	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
 	if store.hasDuplicate(tuple) {
 		return ErrDuplicateKey
 	}
+	store.ensureIndex()
+	id := store.nextRowID
+	store.nextRowID++
 	store.Rows = append(store.Rows, tuple)
+	if store.rowsByID != nil {
+		store.rowsByID[id] = tuple
+	}
+	if store.idByRow != nil {
+		store.idByRow[tuple] = id
+	}
+	if store.Tree != nil {
+		key := store.keyForInsert(tuple, id)
+		store.Tree.Insert(key, encodeRowID(id))
+	}
 	return nil
 }
 

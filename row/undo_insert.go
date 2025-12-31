@@ -42,11 +42,8 @@ func (log *UndoLog) UndoLast(store *Store) error {
 }
 
 func removeRow(store *Store, tuple *data.Tuple) bool {
-	for i, row := range store.Rows {
-		if row == tuple {
-			store.Rows = append(store.Rows[:i], store.Rows[i+1:]...)
-			return true
-		}
+	if store == nil || tuple == nil {
+		return false
 	}
-	return false
+	return store.RemoveTuple(tuple)
 }
