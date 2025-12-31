@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/wilhasse/innodb-go/fil"
 	"github.com/wilhasse/innodb-go/ut"
 )
 
@@ -94,6 +95,9 @@ func (p *Pool) Fetch(space, pageNo uint32) (*Page, bool, error) {
 		ID:       id,
 		Data:     make([]byte, p.pageSize),
 		PinCount: 1,
+	}
+	if err := fil.SpaceReadPageInto(space, pageNo, page.Data); err != nil {
+		return nil, false, err
 	}
 	p.lru.Add(page)
 	p.pages[id] = page

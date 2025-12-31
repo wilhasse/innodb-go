@@ -2,6 +2,7 @@ package fil
 
 import (
 	"errors"
+	"io"
 
 	ibos "github.com/wilhasse/innodb-go/os"
 	"github.com/wilhasse/innodb-go/ut"
@@ -29,6 +30,32 @@ func WritePage(file ibos.File, pageNo uint32, data []byte) error {
 	}
 	_, err := ibos.FileWritePage(file, pageNo, data)
 	return err
+}
+
+// SpaceReadPage reads a page from the file attached to the tablespace.
+func SpaceReadPage(spaceID, pageNo uint32) ([]byte, error) {
+	buf := make([]byte, ut.UNIV_PAGE_SIZE)
+	if err := SpaceReadPageInto(spaceID, pageNo, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+// SpaceReadPageInto reads a page into buf for the attached tablespace file.
+func SpaceReadPageInto(spaceID, pageNo uint32, buf []byte) error {
+	if len(buf) < ut.UNIV_PAGE_SIZE {
+		return errors.New("fil: page buffer too small")
+	}
+	clear(buf[:ut.UNIV_PAGE_SIZE])
+	file := SpaceGetFile(spaceID)
+	if file == nil {
+		return nil
+	}
+	_, err := ibos.FileReadPage(file, pageNo, buf)
+	if err != nil && !errors.Is(err, io.EOF) {
+		return err
+	}
+	return nil
 }
 
 // SpaceWritePage writes a page to the file attached to the tablespace.
