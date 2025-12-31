@@ -167,3 +167,82 @@ func (c *Cursor) Delete() {
 		c.Index = len(c.Page.Records) - 1
 	}
 }
+
+// SlotCursor navigates raw page directory slots in order.
+type SlotCursor struct {
+	Page []byte
+	Slot int
+}
+
+// NewSlotCursor creates a cursor for raw page bytes.
+func NewSlotCursor(page []byte) *SlotCursor {
+	return &SlotCursor{Page: page, Slot: -1}
+}
+
+// Valid reports whether the cursor points to a valid slot.
+func (c *SlotCursor) Valid() bool {
+	if c == nil || c.Page == nil {
+		return false
+	}
+	nSlots := int(HeaderGetField(c.Page, PageNDirSlots))
+	return c.Slot >= 0 && c.Slot < nSlots
+}
+
+// First positions the cursor on the first slot.
+func (c *SlotCursor) First() bool {
+	if c == nil || c.Page == nil {
+		return false
+	}
+	nSlots := int(HeaderGetField(c.Page, PageNDirSlots))
+	if nSlots == 0 {
+		return false
+	}
+	c.Slot = 0
+	return true
+}
+
+// Last positions the cursor on the last slot.
+func (c *SlotCursor) Last() bool {
+	if c == nil || c.Page == nil {
+		return false
+	}
+	nSlots := int(HeaderGetField(c.Page, PageNDirSlots))
+	if nSlots == 0 {
+		return false
+	}
+	c.Slot = nSlots - 1
+	return true
+}
+
+// Next advances to the next slot.
+func (c *SlotCursor) Next() bool {
+	if c == nil || c.Page == nil {
+		return false
+	}
+	nSlots := int(HeaderGetField(c.Page, PageNDirSlots))
+	if c.Slot+1 >= nSlots {
+		return false
+	}
+	c.Slot++
+	return true
+}
+
+// Prev moves to the previous slot.
+func (c *SlotCursor) Prev() bool {
+	if c == nil || c.Page == nil {
+		return false
+	}
+	if c.Slot <= 0 {
+		return false
+	}
+	c.Slot--
+	return true
+}
+
+// RecordOffset returns the record offset for the current slot.
+func (c *SlotCursor) RecordOffset() uint16 {
+	if !c.Valid() {
+		return 0
+	}
+	return DirSlotGetRecOffset(c.Page, c.Slot)
+}
