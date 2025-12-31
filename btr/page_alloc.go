@@ -23,9 +23,13 @@ func PageAlloc(index *dict.Index) *page.Page {
 
 	if pool := buf.GetDefaultPool(); pool != nil {
 		if bufPage, _, err := pool.Fetch(index.SpaceID, pageNo); err == nil {
+			clear(bufPage.Data)
 			pool.MarkDirty(bufPage)
+			_ = pool.FlushPage(bufPage.ID)
 			pool.Release(bufPage)
 		}
+	} else {
+		_ = fil.SpaceWritePage(index.SpaceID, pageNo, make([]byte, ut.UNIV_PAGE_SIZE))
 	}
 	return p
 }

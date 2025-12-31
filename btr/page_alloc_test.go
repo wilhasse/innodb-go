@@ -1,7 +1,10 @@
 package btr
 
 import (
+	"path/filepath"
 	"testing"
+
+	ibos "github.com/wilhasse/innodb-go/os"
 
 	"github.com/wilhasse/innodb-go/buf"
 	"github.com/wilhasse/innodb-go/dict"
@@ -63,5 +66,52 @@ func TestPageAllocFreeSize(t *testing.T) {
 	}
 	if got := GetSize(idx); got != 2 {
 		t.Fatalf("size after reuse mismatch: got %d want 2", got)
+	}
+}
+
+func TestPageAllocWritesZeroPage(t *testing.T) {
+	oldRegistry := page.PageRegistry
+	page.PageRegistry = page.NewRegistry()
+	defer func() {
+		page.PageRegistry = oldRegistry
+	}()
+
+	oldPool := buf.GetDefaultPool()
+	pool := buf.NewPool(2, ut.UnivPageSize)
+	buf.SetDefaultPool(pool)
+	defer buf.SetDefaultPool(oldPool)
+
+	fil.VarInit()
+	fsp.Init()
+	if !fil.SpaceCreate("ts1", 1, 0, fil.SpaceTablespace) {
+		t.Fatalf("expected space create")
+	}
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "ts1.ibd")
+	file, err := ibos.FileCreateSimple(path, ibos.FileOverwrite, ibos.FileReadWrite)
+	if err != nil {
+		t.Fatalf("file open: %v", err)
+	}
+	defer func() {
+		_ = ibos.FileClose(file)
+	}()
+	if err := fil.SpaceSetFile(1, file); err != nil {
+		t.Fatalf("space set file: %v", err)
+	}
+
+	idx := &dict.Index{Name: "idx", SpaceID: 1}
+	p := PageAlloc(idx)
+	if p == nil {
+		t.Fatalf("expected page alloc")
+	}
+	pageBytes, err := fil.ReadPage(file, p.PageNo)
+	if err != nil {
+		t.Fatalf("read page: %v", err)
+	}
+	for i, b := range pageBytes {
+		if b != 0 {
+			t.Fatalf("expected zero page at byte %d, got %d", i, b)
+		}
 	}
 }

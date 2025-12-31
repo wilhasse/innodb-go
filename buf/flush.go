@@ -1,5 +1,7 @@
 package buf
 
+import "github.com/wilhasse/innodb-go/fil"
+
 // FlushType mirrors buf_flush.
 type FlushType int
 
@@ -20,6 +22,9 @@ func (p *Pool) FlushPage(id PageID) bool {
 	if !ok || !page.Dirty {
 		return false
 	}
+	if err := fil.SpaceWritePage(page.ID.Space, page.ID.PageNo, page.Data); err != nil {
+		return false
+	}
 	page.Dirty = false
 	return true
 }
@@ -38,6 +43,9 @@ func (p *Pool) FlushLRU(limit int) int {
 	for e := p.lru.back(); e != nil && flushed < limit; e = p.lru.prev(e) {
 		page := e.Value.(*Page)
 		if page.Dirty {
+			if err := fil.SpaceWritePage(page.ID.Space, page.ID.PageNo, page.Data); err != nil {
+				continue
+			}
 			page.Dirty = false
 			flushed++
 		}

@@ -30,3 +30,12 @@ func WritePage(file ibos.File, pageNo uint32, data []byte) error {
 	_, err := ibos.FileWritePage(file, pageNo, data)
 	return err
 }
+
+// SpaceWritePage writes a page to the file attached to the tablespace.
+func SpaceWritePage(spaceID, pageNo uint32, data []byte) error {
+	file := SpaceGetFile(spaceID)
+	if file == nil {
+		return nil
+	}
+	return WritePage(file, pageNo, data)
+}

@@ -3,6 +3,8 @@ package fil
 import (
 	"errors"
 	"sync"
+
+	ibos "github.com/wilhasse/innodb-go/os"
 )
 
 // NLogFlushes tracks the number of log flushes.
@@ -40,6 +42,7 @@ type Space struct {
 	Flags          uint32
 	ZipSize        uint32
 	Nodes          []*Node
+	File           ibos.File
 }
 
 // System holds the tablespace cache.
@@ -108,6 +111,10 @@ func SpaceDrop(id uint32) {
 	space := sys.spacesByID[id]
 	if space == nil {
 		return
+	}
+	if space.File != nil {
+		_ = ibos.FileClose(space.File)
+		space.File = nil
 	}
 	delete(sys.spacesByID, id)
 	delete(sys.spacesByName, space.Name)
