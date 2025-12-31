@@ -30,10 +30,11 @@ const (
 type Cursor struct {
 	Table *Table
 	pos   int
+	Trx   *trx.Trx
 }
 
 // CursorOpenTable opens a cursor on a table.
-func CursorOpenTable(name string, _ *trx.Trx, out **Cursor) ErrCode {
+func CursorOpenTable(name string, trx *trx.Trx, out **Cursor) ErrCode {
 	if out == nil {
 		return DB_ERROR
 	}
@@ -41,7 +42,7 @@ func CursorOpenTable(name string, _ *trx.Trx, out **Cursor) ErrCode {
 	if table == nil {
 		return DB_TABLE_NOT_FOUND
 	}
-	*out = &Cursor{Table: table, pos: 0}
+	*out = &Cursor{Table: table, pos: 0, Trx: trx}
 	return DB_SUCCESS
 }
 
@@ -52,6 +53,24 @@ func CursorClose(_ *Cursor) ErrCode {
 
 // CursorLock is a no-op for the in-memory cursor.
 func CursorLock(_ *Cursor, _ LockMode) ErrCode {
+	return DB_SUCCESS
+}
+
+// CursorAttachTrx binds a transaction to a cursor.
+func CursorAttachTrx(crsr *Cursor, trx *trx.Trx) ErrCode {
+	if crsr == nil {
+		return DB_ERROR
+	}
+	crsr.Trx = trx
+	return DB_SUCCESS
+}
+
+// CursorReset resets cursor position.
+func CursorReset(crsr *Cursor) ErrCode {
+	if crsr == nil {
+		return DB_ERROR
+	}
+	crsr.pos = 0
 	return DB_SUCCESS
 }
 

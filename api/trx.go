@@ -10,6 +10,16 @@ const (
 	IB_TRX_SERIALIZABLE
 )
 
+// TrxState mirrors ib_trx_state_t.
+type TrxState int
+
+const (
+	IB_TRX_NOT_STARTED TrxState = iota
+	IB_TRX_ACTIVE
+	IB_TRX_COMMITTED
+	IB_TRX_ROLLED_BACK
+)
+
 // TrxBegin starts a new transaction.
 func TrxBegin(_ TrxIsolation) *trx.Trx {
 	ibTrx := trx.TrxCreate()
@@ -32,5 +42,31 @@ func TrxRollback(ibTrx *trx.Trx) ErrCode {
 		return DB_ERROR
 	}
 	trx.TrxRollback(ibTrx)
+	return DB_SUCCESS
+}
+
+// TrxStateGet returns the current transaction state.
+func TrxStateGet(ibTrx *trx.Trx) TrxState {
+	if ibTrx == nil {
+		return IB_TRX_NOT_STARTED
+	}
+	switch ibTrx.State {
+	case trx.TrxActive:
+		return IB_TRX_ACTIVE
+	case trx.TrxCommitted:
+		return IB_TRX_COMMITTED
+	case trx.TrxRolledBack:
+		return IB_TRX_ROLLED_BACK
+	default:
+		return IB_TRX_NOT_STARTED
+	}
+}
+
+// TrxRelease releases a transaction handle.
+func TrxRelease(ibTrx *trx.Trx) ErrCode {
+	if ibTrx == nil {
+		return DB_ERROR
+	}
+	trx.TrxRelease(ibTrx)
 	return DB_SUCCESS
 }
