@@ -8,8 +8,8 @@ import (
 )
 
 const (
-	dropDB    = "drop_test"
-	dropTable = "t"
+	dropDB        = "drop_test"
+	dropTableName = "t"
 )
 
 func TestDropHarness(t *testing.T) {
@@ -36,7 +36,7 @@ func TestDropHarness(t *testing.T) {
 
 	trx := api.TrxBegin(api.IB_TRX_REPEATABLE_READ)
 	for i := 0; i < 10; i++ {
-		tableName := fmt.Sprintf("%s/%s%d", dropDB, dropTable, i)
+		tableName := fmt.Sprintf("%s/%s%d", dropDB, dropTableName, i)
 		var crsr *api.Cursor
 		if err := api.CursorOpenTable(tableName, trx, &crsr); err != api.DB_SUCCESS {
 			t.Fatalf("CursorOpenTable %s: %v", tableName, err)
@@ -55,7 +55,7 @@ func TestDropHarness(t *testing.T) {
 }
 
 func createDropTable(n int) api.ErrCode {
-	tableName := fmt.Sprintf("%s/%s%d", dropDB, dropTable, n)
+	tableName := fmt.Sprintf("%s/%s%d", dropDB, dropTableName, n)
 	var schema *api.TableSchema
 	if err := api.TableSchemaCreate(tableName, &schema, api.IB_TBL_COMPACT, 0); err != api.DB_SUCCESS {
 		return err
