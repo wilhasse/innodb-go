@@ -10,6 +10,11 @@ type Record struct {
 
 // Page holds ordered records.
 type Page struct {
+	SpaceID  uint32
+	PageNo   uint32
+	PageType uint16
+	PrevPage uint32
+	NextPage uint32
 	Records []Record
 }
 
