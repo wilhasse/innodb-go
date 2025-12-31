@@ -30,6 +30,9 @@ func Init() ErrCode {
 	if initialized {
 		return DB_SUCCESS
 	}
+	if err := CfgInit(); err != DB_SUCCESS {
+		return err
+	}
 	initialized = true
 	return DB_SUCCESS
 }
@@ -52,6 +55,9 @@ func Startup(format string) ErrCode {
 func Shutdown(_ ShutdownFlag) ErrCode {
 	if !initialized {
 		return DB_ERROR
+	}
+	if err := CfgShutdown(); err != DB_SUCCESS {
+		return err
 	}
 	started = false
 	activeDBFormat = ""
