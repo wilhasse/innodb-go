@@ -99,6 +99,8 @@ func (t *Tree) Insert(key, value []byte) bool {
 
 	if len(leaf.keys) > t.maxKeys() {
 		t.splitLeaf(leaf)
+	} else if idx == 0 {
+		t.updateParentKey(leaf)
 	}
 	return false
 }

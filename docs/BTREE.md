@@ -58,3 +58,9 @@
   - `PageGetSplitRecToLeft/Right` and `PageGetSureSplitRec` choose split points on `page.Page`.
   - `PageSplitAndInsert` wraps in-memory inserts and reports when a split is needed.
   - `RootRaiseAndInsert` detects height increases when root splits.
+
+## IBGO-145: Non-leaf insert + node pointers
+- C refs: `btr/btr0btr.c` (non-leaf insert, node ptr maintenance)
+- Go mapping:
+  - `InsertOnNonLeafLevel`, `AttachHalfPages`, `NodePtrDelete`, and `LiftPageUp` wrap internal node pointer updates.
+  - Tree insertion now updates parent separator keys when leaf minima change.
