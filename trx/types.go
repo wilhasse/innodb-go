@@ -1,7 +1,15 @@
 package trx
 
-// Trx is a placeholder for transaction state.
-type Trx struct{}
+// UndoAction represents a rollback handler.
+type UndoAction func()
 
-// Savepoint is a placeholder for transaction savepoints.
-type Savepoint struct{}
+// Trx holds transaction state for rollback.
+type Trx struct {
+	UndoLog    []UndoAction
+	Savepoints []Savepoint
+}
+
+// Savepoint tracks the undo log position.
+type Savepoint struct {
+	UndoLen int
+}
