@@ -26,6 +26,7 @@ type Table struct {
 	Name    string
 	ID      ut.Dulint
 	Space   uint32
+	Flags   uint32
 	Columns []Column
 	Indexes map[string]*Index
 }
