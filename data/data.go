@@ -37,9 +37,11 @@ const RecMaxNFields = 1023
 
 // DataType mirrors dtype_t.
 type DataType struct {
-	MType  uint32
-	PrType uint32
-	Len    uint32
+	MType    uint32
+	PrType   uint32
+	Len      uint32
+	MbMinLen uint32
+	MbMaxLen uint32
 }
 
 // Field mirrors dfield_t.
