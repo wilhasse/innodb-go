@@ -146,38 +146,45 @@ func (c *Cur) Search(key []byte, mode SearchMode) bool {
 	}
 	CurNNonSea++
 	c.Flag = CurBinary
-
-	var cur *Cursor
-	switch mode {
-	case SearchLE:
-		cur = c.Tree.Seek(key)
-		if cur == nil {
-			cur = c.Tree.Last()
-		} else if c.Tree.compare(cur.node.keys[cur.index], key) > 0 {
-			if !cur.Prev() {
-				cur = nil
-			}
-		}
-	default:
-		cur = c.Tree.Seek(key)
-	}
-
-	c.Cursor = cur
-	return c.Valid()
+	return c.SearchToNthLevel(key, mode, 0)
 }
 
 // OpenAtIndexSide positions the cursor at the leftmost or rightmost record.
 func (c *Cur) OpenAtIndexSide(left bool) bool {
-	if c == nil || c.Tree == nil {
+	if c == nil || c.Tree == nil || c.Tree.root == nil {
 		return false
 	}
-	if left {
-		c.Cursor = c.Tree.First()
-	} else {
-		c.Cursor = c.Tree.Last()
+	c.Path = c.Path[:0]
+	c.TreeHeight = ut.Ulint(treeHeight(c.Tree))
+
+	n := c.Tree.root
+	for {
+		if n == nil {
+			c.Invalidate()
+			return false
+		}
+		if n.leaf {
+			if len(n.keys) == 0 {
+				c.Invalidate()
+				return false
+			}
+			idx := 0
+			if !left {
+				idx = len(n.keys) - 1
+			}
+			c.addPathInfo(ut.Ulint(idx), ut.Ulint(len(n.keys)))
+			c.Cursor = &Cursor{node: n, index: idx}
+			c.Flag = CurBinary
+			return c.Valid()
+		}
+
+		childIdx := 0
+		if !left {
+			childIdx = len(n.children) - 1
+		}
+		c.addPathInfo(ut.Ulint(childIdx), ut.Ulint(len(n.keys)))
+		n = n.children[childIdx]
 	}
-	c.Flag = CurBinary
-	return c.Valid()
 }
 
 // OpenAtRandom positions the cursor at a deterministic pseudo-random record.

@@ -34,3 +34,9 @@
   - `btr.Create` allocates a root page and initializes `dict.Index` root metadata.
   - `btr.RootBlockGet`/`btr.RootGet` fetch the root page via the registry.
   - `btr.FreeRoot`/`btr.FreeButNotRoot` release pages and keep index metadata in sync.
+
+## IBGO-141: Cursor search to nth level
+- C refs: `btr/btr0cur.c` (btr_cur_search_to_nth_level, btr_cur_add_path_info, open-at-side/random)
+- Go mapping:
+  - `Cur.SearchToNthLevel` traverses the in-memory tree, positions the cursor, and captures path info.
+  - `Cur.OpenAtIndexSide`/`Cur.OpenAtRandom` now record path metadata for future splits.

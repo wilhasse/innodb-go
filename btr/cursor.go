@@ -24,6 +24,9 @@ func (c *Cursor) Value() []byte {
 	if !c.Valid() {
 		return nil
 	}
+	if len(c.node.values) == 0 {
+		return nil
+	}
 	return cloneBytes(c.node.values[c.index])
 }
 
