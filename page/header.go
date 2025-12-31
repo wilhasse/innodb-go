@@ -8,6 +8,8 @@ import (
 // Page header offsets mirror page0page.h.
 const (
 	PageHeaderOffset = fil.PageData
+	FsegHeaderSize   = 10
+	PageDataOffset   = PageHeaderOffset + 36 + 2*FsegHeaderSize
 
 	PageNDirSlots  uint32 = 0
 	PageHeapTop    uint32 = 2
