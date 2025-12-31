@@ -13,10 +13,14 @@ const (
 
 // Lock represents a simplified lock node.
 type Lock struct {
-	Type LockType
-	Prev *Lock
-	Next *Lock
-	Bits []bool
+	Type   LockType
+	Prev   *Lock
+	Next   *Lock
+	Bits   []bool
+	Mode   Mode
+	TrxID  string
+	Table  string
+	Record RecordKey
 }
 
 // QueueIterator iterates over a lock queue.
