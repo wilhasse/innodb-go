@@ -71,6 +71,22 @@ func (r *Registry) Count(spaceID uint32) int {
 	return count
 }
 
+// Pages returns a snapshot of pages for a space.
+func (r *Registry) Pages(spaceID uint32) []*Page {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	pages := make([]*Page, 0)
+	for key, page := range r.pages {
+		if key.spaceID == spaceID {
+			pages = append(pages, page)
+		}
+	}
+	return pages
+}
+
 // NewPage allocates a page, initializes it, and registers it.
 func (r *Registry) NewPage(spaceID, pageNo uint32, pageType uint16) *Page {
 	if r == nil {

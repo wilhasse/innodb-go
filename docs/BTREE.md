@@ -27,3 +27,10 @@
   - `fsp.AllocPage`/`fsp.FreePage` manage a per-space free list and grow `fil.Space` size.
   - `btr.PageAlloc`/`btr.PageFree` wire allocation to `page.Registry` and optional `buf` pool.
   - `btr.GetSize` counts allocated pages per space via the registry.
+
+## IBGO-140: Tree create/root management
+- C refs: `btr/btr0btr.c` (btr_create, root get/free)
+- Go mapping:
+  - `btr.Create` allocates a root page and initializes `dict.Index` root metadata.
+  - `btr.RootBlockGet`/`btr.RootGet` fetch the root page via the registry.
+  - `btr.FreeRoot`/`btr.FreeButNotRoot` release pages and keep index metadata in sync.
