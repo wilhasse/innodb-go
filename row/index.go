@@ -6,6 +6,7 @@ import (
 
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
+	"github.com/wilhasse/innodb-go/rec"
 )
 
 const storeTreeOrder = 4
@@ -74,6 +75,17 @@ func encodeRowID(id uint64) []byte {
 	return buf[:]
 }
 
+func encodeRowValue(id uint64, tuple *data.Tuple) []byte {
+	recBytes, err := rec.EncodeVar(tuple, nil, 0)
+	if err != nil {
+		return encodeRowID(id)
+	}
+	val := make([]byte, 8+len(recBytes))
+	binary.BigEndian.PutUint64(val[:8], id)
+	copy(val[8:], recBytes)
+	return val
+}
+
 // DecodeRowID converts a stored row ID value into uint64.
 func DecodeRowID(value []byte) (uint64, bool) {
 	if len(value) < 8 {
@@ -109,7 +121,7 @@ func (store *Store) rebuildIndex() {
 		store.rowsByID[id] = row
 		store.idByRow[row] = id
 		key := store.keyForInsert(row, id)
-		store.Tree.Insert(key, encodeRowID(id))
+		store.Tree.Insert(key, encodeRowValue(id, row))
 	}
 }
 
@@ -211,20 +223,22 @@ func (store *Store) replaceTuple(oldRow, newRow *data.Tuple) error {
 	delete(store.idByRow, oldRow)
 	store.idByRow[newRow] = id
 	store.rowsByID[id] = newRow
-	if store.Tree != nil && !bytes.Equal(oldKey, newKey) {
-		cur := btr.NewCur(store.Tree)
-		if cur.Search(oldKey, btr.SearchGE) && CompareKeys(cur.Key(), oldKey) == 0 {
-			cur.OptimisticDelete()
-		} else {
-			store.Tree.Delete(oldKey)
+	if store.Tree != nil {
+		if !bytes.Equal(oldKey, newKey) {
+			cur := btr.NewCur(store.Tree)
+			if cur.Search(oldKey, btr.SearchGE) && CompareKeys(cur.Key(), oldKey) == 0 {
+				cur.OptimisticDelete()
+			} else {
+				store.Tree.Delete(oldKey)
+			}
 		}
-		val := encodeRowID(id)
-		cur = btr.NewCur(store.Tree)
+		val := encodeRowValue(id, newRow)
+		cur := btr.NewCur(store.Tree)
 		if !cur.OptimisticInsert(newKey, val) {
 			store.Tree.Insert(newKey, val)
 		}
 	}
-	store.appendLog(storeOpUpdate, newKey, encodeRowID(id))
+	store.appendLog(storeOpUpdate, newKey, encodeRowValue(id, newRow))
 	return nil
 }
 

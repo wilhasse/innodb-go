@@ -8,6 +8,7 @@ import (
 
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
+	"github.com/wilhasse/innodb-go/rec"
 	"github.com/wilhasse/innodb-go/row"
 	"github.com/wilhasse/innodb-go/trx"
 )
@@ -208,11 +209,36 @@ func CursorReadRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 	if crsr.treeCur == nil || !crsr.treeCur.Valid() {
 		return DB_RECORD_NOT_FOUND
 	}
-	row, ok := cursorRow(crsr)
-	if !ok {
+	value := crsr.treeCur.Value()
+	if len(value) == 0 {
 		return DB_RECORD_NOT_FOUND
 	}
-	copyTuple(tpl, row)
+	recBytes := value
+	if len(value) >= 8 {
+		recBytes = value[8:]
+	}
+	if len(recBytes) == 0 {
+		row, ok := cursorRow(crsr)
+		if !ok {
+			return DB_RECORD_NOT_FOUND
+		}
+		copyTuple(tpl, row)
+		return DB_SUCCESS
+	}
+	nFields := len(tpl.Fields)
+	if nFields == 0 && crsr.Table != nil && crsr.Table.Schema != nil {
+		nFields = len(crsr.Table.Schema.Columns)
+	}
+	decoded, err := rec.DecodeVar(recBytes, nFields, 0)
+	if err != nil {
+		row, ok := cursorRow(crsr)
+		if !ok {
+			return DB_ERROR
+		}
+		copyTuple(tpl, row)
+		return DB_SUCCESS
+	}
+	copyTuple(tpl, decoded)
 	return DB_SUCCESS
 }
 

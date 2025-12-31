@@ -59,7 +59,7 @@ func (store *Store) Insert(tuple *data.Tuple) error {
 	}
 	if store.Tree != nil {
 		key := store.keyForInsert(tuple, id)
-		val := encodeRowID(id)
+		val := encodeRowValue(id, tuple)
 		cur := btr.NewCur(store.Tree)
 		if !cur.OptimisticInsert(key, val) {
 			store.Tree.Insert(key, val)
