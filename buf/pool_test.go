@@ -79,3 +79,22 @@ func TestPoolDirtyFlush(t *testing.T) {
 		t.Fatalf("expected no dirty pages after flush")
 	}
 }
+
+func TestPoolGetPut(t *testing.T) {
+	pool := NewPool(1, BufPoolDefaultPageSize)
+
+	page, hit, err := pool.Get(2, 3)
+	if err != nil {
+		t.Fatalf("unexpected get error: %v", err)
+	}
+	if hit {
+		t.Fatalf("expected miss on first get")
+	}
+	pool.MarkDirty(page)
+	pool.Put(page)
+
+	stats := pool.Stats()
+	if stats.Dirty != 1 {
+		t.Fatalf("expected dirty count 1, got %d", stats.Dirty)
+	}
+}

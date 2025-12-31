@@ -101,6 +101,11 @@ func (p *Pool) Fetch(space, pageNo uint32) (*Page, bool, error) {
 	return page, false, nil
 }
 
+// Get returns a pinned page frame, loading it if needed.
+func (p *Pool) Get(space, pageNo uint32) (*Page, bool, error) {
+	return p.Fetch(space, pageNo)
+}
+
 // Release decreases the pin count of a page.
 func (p *Pool) Release(page *Page) {
 	if p == nil || page == nil {
@@ -111,6 +116,11 @@ func (p *Pool) Release(page *Page) {
 	if page.PinCount > 0 {
 		page.PinCount--
 	}
+}
+
+// Put releases a page previously returned by Get/Fetch.
+func (p *Pool) Put(page *Page) {
+	p.Release(page)
 }
 
 // MarkDirty marks a page dirty.
