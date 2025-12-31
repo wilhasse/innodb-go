@@ -1,5 +1,7 @@
 package ha
 
+import "sync"
+
 // Node is a hash chain node.
 type Node struct {
 	Next *Node
@@ -10,6 +12,7 @@ type Node struct {
 // HashTable stores chained hash buckets.
 type HashTable struct {
 	buckets []*Node
+	mutexes []sync.Mutex
 }
 
 // Create returns a hash table with at least n buckets.
