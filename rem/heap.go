@@ -5,6 +5,7 @@ type RecordType int
 
 const (
 	RecordUser RecordType = iota
+	RecordNodePointer
 	RecordInfimum
 	RecordSupremum
 )

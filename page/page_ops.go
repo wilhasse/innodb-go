@@ -29,6 +29,7 @@ func (p *Page) Init(spaceID, pageNo uint32, pageType uint16) {
 	p.PageType = pageType
 	p.PrevPage = 0
 	p.NextPage = 0
+	p.ParentPageNo = 0
 	p.NextHeapNo = rem.HeapNoSupremum + 1
 	p.Records = nil
 }
@@ -57,7 +58,7 @@ func (p *Page) InsertRecord(rec Record) {
 	if p == nil {
 		return
 	}
-	if rec.Type == rem.RecordUser && rec.HeapNo == 0 {
+	if (rec.Type == rem.RecordUser || rec.Type == rem.RecordNodePointer) && rec.HeapNo == 0 {
 		if p.NextHeapNo < rem.HeapNoSupremum+1 {
 			p.NextHeapNo = rem.HeapNoSupremum + 1
 		}

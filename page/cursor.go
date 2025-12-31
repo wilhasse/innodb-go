@@ -16,13 +16,14 @@ type Record struct {
 
 // Page holds ordered records.
 type Page struct {
-	SpaceID    uint32
-	PageNo     uint32
-	PageType   uint16
-	PrevPage   uint32
-	NextPage   uint32
-	NextHeapNo uint16
-	Records    []Record
+	SpaceID      uint32
+	PageNo       uint32
+	PageType     uint16
+	PrevPage     uint32
+	NextPage     uint32
+	ParentPageNo uint32
+	NextHeapNo   uint16
+	Records      []Record
 }
 
 // Cursor points to a record within a page.

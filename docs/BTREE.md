@@ -13,3 +13,10 @@
   - `btr.PageCreate`/`btr.PageEmpty` initialize pages with infimum/supremum records.
   - `page.Record` tracks record type/heap number, and page cursors skip system records.
   - `rem` exports record type + heap number constants.
+
+## IBGO-138: Node pointers + parent navigation
+- C refs: `btr/btr0btr.c` (node pointer + father helpers)
+- Go mapping:
+  - `btr.NodePtrSetChildPageNo`/`btr.NodePtrGetChild` store child page numbers in node pointer records.
+  - `page.Page` tracks `ParentPageNo` for parent lookups via `page.Registry`.
+  - `btr.PageGetFatherBlock`/`btr.PageGetFatherNodePtr`/`btr.PageGetFather` walk parent linkage.

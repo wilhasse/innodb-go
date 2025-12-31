@@ -7,7 +7,7 @@ import (
 )
 
 func isUserRecord(rec Record) bool {
-	return rec.Type == rem.RecordUser
+	return rec.Type == rem.RecordUser || rec.Type == rem.RecordNodePointer
 }
 
 func compareRecordToKey(rec Record, key []byte) int {
