@@ -37,3 +37,24 @@ func TestEncodeFixedNull(t *testing.T) {
 		t.Fatalf("got=%v want=%v", got, want)
 	}
 }
+
+func TestEncodeVarWithNullAndPrefix(t *testing.T) {
+	tpl := &data.Tuple{Fields: []data.Field{
+		{Data: []byte("abcdef"), Len: 6},
+		{Len: data.UnivSQLNull},
+		{Data: []byte("xy"), Len: 2},
+	}}
+	got, err := EncodeVar(tpl, []int{3, 0, 1}, 2)
+	if err != nil {
+		t.Fatalf("EncodeVar: %v", err)
+	}
+	want := []byte{
+		0x00, 0x00,
+		0x00, 0x00, 0x03, 'a', 'b', 'c',
+		0x01, 0x00, 0x00,
+		0x00, 0x00, 0x01, 'x',
+	}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("got=%v want=%v", got, want)
+	}
+}

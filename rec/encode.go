@@ -1,6 +1,7 @@
 package rec
 
 import (
+	"encoding/binary"
 	"errors"
 
 	"github.com/wilhasse/innodb-go/data"
@@ -50,4 +51,44 @@ func EncodeFixed(tuple *data.Tuple, lengths []int, extra int) ([]byte, error) {
 		pos += length
 	}
 	return buf, nil
+}
+
+// EncodeVar encodes a tuple for variable-length fields with NULL flags.
+// Each field is encoded as: nullFlag (1 byte), length (2 bytes), data.
+func EncodeVar(tuple *data.Tuple, prefixes []int, extra int) ([]byte, error) {
+	if tuple == nil {
+		return nil, errors.New("rec: nil tuple")
+	}
+	if extra < 0 {
+		extra = 0
+	}
+	buf := make([]byte, extra)
+	for i, field := range tuple.Fields {
+		prefix := 0
+		if i < len(prefixes) {
+			prefix = prefixes[i]
+		}
+		if data.FieldIsNull(&field) {
+			buf = append(buf, 1)
+			buf = appendUint16(buf, 0)
+			continue
+		}
+		dataBytes := field.Data
+		if int(field.Len) < len(dataBytes) {
+			dataBytes = dataBytes[:field.Len]
+		}
+		if prefix > 0 && len(dataBytes) > prefix {
+			dataBytes = dataBytes[:prefix]
+		}
+		buf = append(buf, 0)
+		buf = appendUint16(buf, len(dataBytes))
+		buf = append(buf, dataBytes...)
+	}
+	return buf, nil
+}
+
+func appendUint16(buf []byte, val int) []byte {
+	var tmp [2]byte
+	binary.BigEndian.PutUint16(tmp[:], uint16(val))
+	return append(buf, tmp[:]...)
 }
