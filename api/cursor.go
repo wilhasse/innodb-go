@@ -214,7 +214,8 @@ func TupleClear(tpl *data.Tuple) *data.Tuple {
 }
 
 // TupleDelete releases a tuple.
-func TupleDelete(_ *data.Tuple) {
+func TupleDelete(tpl *data.Tuple) {
+	unregisterTupleMeta(tpl)
 }
 
 func newTupleForCursor(crsr *Cursor) *data.Tuple {
@@ -226,12 +227,16 @@ func newTupleForCursor(crsr *Cursor) *data.Tuple {
 		n = 1
 	}
 	fields := make([]data.Field, n)
-	return &data.Tuple{
+	tpl := &data.Tuple{
 		NFields:    n,
 		NFieldsCmp: n,
 		Fields:     fields,
 		Magic:      data.DataTupleMagic,
 	}
+	if crsr != nil && crsr.Table != nil && crsr.Table.Schema != nil {
+		registerTupleMeta(tpl, crsr.Table.Schema)
+	}
+	return tpl
 }
 
 func tupleReadI32(tpl *data.Tuple, col int) (int32, ErrCode) {
