@@ -88,18 +88,21 @@ func (t *Tree) Insert(key, value []byte) bool {
 		if t.deleted != nil {
 			delete(t.deleted, string(key))
 		}
+		updateSearchEntry(t, key, t.root, 0)
 		return false
 	}
 
 	if t.deleted != nil {
 		delete(t.deleted, string(key))
 	}
+	removeSearchEntry(t, key)
 
 	leaf := t.findLeaf(key)
 	idx := t.keyIndex(leaf.keys, key)
 	if idx < len(leaf.keys) && t.compare(leaf.keys[idx], key) == 0 {
 		leaf.values[idx] = cloneBytes(value)
 		t.modCount++
+		updateSearchEntry(t, key, leaf, idx)
 		return true
 	}
 
@@ -112,6 +115,16 @@ func (t *Tree) Insert(key, value []byte) bool {
 		t.splitLeaf(leaf)
 	} else if idx == 0 {
 		t.updateParentKey(leaf)
+	}
+	if leaf != nil {
+		if len(leaf.keys) > 0 {
+			if splitLeaf := t.findLeaf(key); splitLeaf != nil {
+				splitIdx := t.keyIndex(splitLeaf.keys, key)
+				if splitIdx < len(splitLeaf.keys) && t.compare(splitLeaf.keys[splitIdx], key) == 0 {
+					updateSearchEntry(t, key, splitLeaf, splitIdx)
+				}
+			}
+		}
 	}
 	return false
 }

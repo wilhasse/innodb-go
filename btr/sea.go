@@ -49,6 +49,7 @@ func SearchVarInit() {
 	SearchNSucc = 0
 	SearchNHashFail = 0
 	searchSys = nil
+	clearHashBuilt()
 }
 
 // SearchSysCreate initializes the adaptive search system.
@@ -65,6 +66,7 @@ func SearchSysCreate(maxEntries int) {
 // SearchSysClose tears down the adaptive search system.
 func SearchSysClose() {
 	searchSys = nil
+	clearHashBuilt()
 }
 
 // SearchEnable toggles adaptive search on.

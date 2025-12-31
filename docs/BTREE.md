@@ -100,3 +100,9 @@
 - Go mapping:
   - `StoreBigRecExternFields` stores large values in `fil` external storage with a compact ref.
   - `RecGetExternallyStoredLen`, `CopyExternallyStoredFieldPrefix`, and `RecFreeExternallyStoredFields` manage refs.
+
+## IBGO-152: Adaptive hash index
+- C refs: `btr/btr0sea.c`
+- Go mapping:
+  - `SearchSysCreate`/`SearchSysClose` manage an in-tree hash index.
+  - `SearchBuildPageHashIndex` and `SearchGuessOnHash` provide deterministic hash lookups.

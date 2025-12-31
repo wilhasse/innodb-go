@@ -11,6 +11,7 @@ func (t *Tree) markDeleted(key []byte) bool {
 		t.deleted = make(map[string]struct{})
 	}
 	t.deleted[string(key)] = struct{}{}
+	removeSearchEntry(t, key)
 	t.modCount++
 	return true
 }
@@ -23,6 +24,9 @@ func (t *Tree) unmarkDeleted(key []byte) bool {
 		return false
 	}
 	delete(t.deleted, string(key))
+	if leaf, idx, ok := t.findKey(key); ok {
+		updateSearchEntry(t, key, leaf, idx)
+	}
 	t.modCount++
 	return true
 }
