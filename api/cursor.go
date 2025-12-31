@@ -113,8 +113,11 @@ func CursorInsertRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 	if err := validateNotNull(crsr, tpl); err != DB_SUCCESS {
 		return err
 	}
-	cloned := cloneTuple(tpl)
-	if err := crsr.Table.Store.Insert(cloned); err != nil {
+	encoded, err := encodeDecodeTuple(tpl)
+	if err != DB_SUCCESS {
+		return err
+	}
+	if err := crsr.Table.Store.Insert(encoded); err != nil {
 		if errors.Is(err, row.ErrDuplicateKey) {
 			return DB_DUPLICATE_KEY
 		}

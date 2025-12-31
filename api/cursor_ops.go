@@ -6,6 +6,7 @@ import (
 
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
+	"github.com/wilhasse/innodb-go/rec"
 	"github.com/wilhasse/innodb-go/row"
 )
 
@@ -54,8 +55,11 @@ func CursorUpdateRow(crsr *Cursor, oldTpl, newTpl *data.Tuple) ErrCode {
 	if target == nil {
 		return DB_RECORD_NOT_FOUND
 	}
-	cloned := cloneTuple(newTpl)
-	if err := store.ReplaceTuple(target, cloned); err != nil {
+	encoded, err := encodeDecodeTuple(newTpl)
+	if err != DB_SUCCESS {
+		return err
+	}
+	if err := store.ReplaceTuple(target, encoded); err != nil {
 		if errors.Is(err, row.ErrDuplicateKey) {
 			return DB_DUPLICATE_KEY
 		}
@@ -137,9 +141,16 @@ func CursorDeleteRow(crsr *Cursor) ErrCode {
 	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil {
 		return DB_ERROR
 	}
-	row, ok := cursorRow(crsr)
-	if !ok {
-		return DB_RECORD_NOT_FOUND
+	var row *data.Tuple
+	if decoded, ok := decodeCursorRecord(crsr); ok {
+		row = findStoredTuple(crsr.Table.Store, decoded)
+	}
+	if row == nil {
+		var ok bool
+		row, ok = cursorRow(crsr)
+		if !ok {
+			return DB_RECORD_NOT_FOUND
+		}
 	}
 	if crsr.treeCur != nil && crsr.treeCur.Valid() {
 		crsr.lastKey = crsr.treeCur.Key()
@@ -149,6 +160,50 @@ func CursorDeleteRow(crsr *Cursor) ErrCode {
 	}
 	crsr.treeCur = nil
 	return DB_SUCCESS
+}
+
+func decodeCursorRecord(crsr *Cursor) (*data.Tuple, bool) {
+	if crsr == nil || crsr.Table == nil || crsr.treeCur == nil || !crsr.treeCur.Valid() {
+		return nil, false
+	}
+	value := crsr.treeCur.Value()
+	if len(value) == 0 {
+		return nil, false
+	}
+	recBytes := value
+	if len(value) >= 8 {
+		recBytes = value[8:]
+	}
+	if len(recBytes) == 0 {
+		return nil, false
+	}
+	nFields := len(crsr.Table.Schema.Columns)
+	if nFields == 0 && crsr.Table.Store != nil {
+		if len(crsr.Table.Store.Rows) > 0 && crsr.Table.Store.Rows[0] != nil {
+			nFields = len(crsr.Table.Store.Rows[0].Fields)
+		}
+	}
+	if nFields == 0 {
+		return nil, false
+	}
+	decoded, err := rec.DecodeVar(recBytes, nFields, 0)
+	if err != nil {
+		return nil, false
+	}
+	return decoded, true
+}
+
+func findStoredTuple(store *row.Store, tpl *data.Tuple) *data.Tuple {
+	if store == nil || tpl == nil {
+		return nil
+	}
+	rows := store.SelectWhere(func(candidate *data.Tuple) bool {
+		return tupleEqual(candidate, tpl)
+	})
+	if len(rows) == 0 {
+		return nil
+	}
+	return rows[0]
 }
 
 func tupleEqual(a, b *data.Tuple) bool {
