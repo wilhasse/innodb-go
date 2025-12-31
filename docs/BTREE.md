@@ -71,3 +71,9 @@
   - `Cur.DelMarkSetClustRec`/`Cur.DelMarkSetSecRec` set delete marks; `Cur.DelUnmarkForIbuf` clears them.
   - `Cur.OptimisticDelete`/`Cur.PessimisticDelete` perform physical deletes.
   - Cursor navigation skips delete-marked keys for visibility.
+
+## IBGO-147: Update paths
+- C refs: `btr/btr0cur.c` (update-in-place, optimistic/pessimistic update)
+- Go mapping:
+  - `Cur.UpdateInPlace`, `Cur.OptimisticUpdate`, `Cur.PessimisticUpdate` implement size-preserving and size-changing updates.
+  - `Cur.UpdateAllocZip`/`Cur.ParseUpdateInPlace` are stubbed helpers.
