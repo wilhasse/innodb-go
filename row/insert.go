@@ -12,9 +12,11 @@ var ErrDuplicateKey = errors.New("row: duplicate key")
 
 // Store holds rows for a table.
 type Store struct {
-	Rows             []*data.Tuple
-	PrimaryKey       int
-	PrimaryKeyPrefix int
+	Rows               []*data.Tuple
+	PrimaryKey         int
+	PrimaryKeyPrefix   int
+	PrimaryKeyFields   []int
+	PrimaryKeyPrefixes []int
 }
 
 // NewStore creates a row store with a primary key field index.
@@ -27,16 +29,39 @@ func (store *Store) Insert(tuple *data.Tuple) error {
 	if store == nil || tuple == nil {
 		return errors.New("row: nil store or tuple")
 	}
-	if store.PrimaryKey >= 0 && store.PrimaryKey < len(tuple.Fields) {
-		if store.hasKey(tuple.Fields[store.PrimaryKey]) {
-			return ErrDuplicateKey
-		}
+	if store.hasDuplicate(tuple) {
+		return ErrDuplicateKey
 	}
 	store.Rows = append(store.Rows, tuple)
 	return nil
 }
 
-func (store *Store) hasKey(field data.Field) bool {
+func (store *Store) hasDuplicate(tuple *data.Tuple) bool {
+	if store == nil || tuple == nil {
+		return false
+	}
+	if len(store.PrimaryKeyFields) > 0 {
+		return store.hasCompositeKey(tuple)
+	}
+	if store.PrimaryKey >= 0 && store.PrimaryKey < len(tuple.Fields) {
+		return store.hasSingleKey(tuple.Fields[store.PrimaryKey])
+	}
+	return false
+}
+
+func (store *Store) hasCompositeKey(tuple *data.Tuple) bool {
+	for _, row := range store.Rows {
+		if row == nil {
+			continue
+		}
+		if compositeFieldsEqual(row, tuple, store.PrimaryKeyFields, store.PrimaryKeyPrefixes) {
+			return true
+		}
+	}
+	return false
+}
+
+func (store *Store) hasSingleKey(field data.Field) bool {
 	for _, row := range store.Rows {
 		if row == nil || store.PrimaryKey < 0 || store.PrimaryKey >= len(row.Fields) {
 			continue
@@ -46,6 +71,25 @@ func (store *Store) hasKey(field data.Field) bool {
 		}
 	}
 	return false
+}
+
+func compositeFieldsEqual(a, b *data.Tuple, cols []int, prefixes []int) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	for i, col := range cols {
+		if col < 0 || col >= len(a.Fields) || col >= len(b.Fields) {
+			return false
+		}
+		prefix := 0
+		if i < len(prefixes) {
+			prefix = prefixes[i]
+		}
+		if !fieldsEqualPrefix(a.Fields[col], b.Fields[col], prefix) {
+			return false
+		}
+	}
+	return true
 }
 
 func fieldsEqualPrefix(a, b data.Field, prefix int) bool {

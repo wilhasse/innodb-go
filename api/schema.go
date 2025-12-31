@@ -199,28 +199,40 @@ func TableCreate(_ *trx.Trx, schema *TableSchema, tableID *uint64) ErrCode {
 	}
 	primaryKey := -1
 	primaryKeyPrefix := 0
+	var primaryKeyFields []int
+	var primaryKeyPrefixes []int
 	if schema != nil {
 		for _, idx := range schema.Indexes {
 			if idx == nil || !idx.Clustered || len(idx.Columns) == 0 {
 				continue
 			}
-			colName := strings.ToLower(idx.Columns[0])
-			for i, col := range schema.Columns {
-				if strings.ToLower(col.Name) == colName {
-					primaryKey = i
-					if len(idx.Prefixes) > 0 {
-						primaryKeyPrefix = idx.Prefixes[0]
+			for j, colName := range idx.Columns {
+				colName = strings.ToLower(colName)
+				for i, col := range schema.Columns {
+					if strings.ToLower(col.Name) == colName {
+						primaryKeyFields = append(primaryKeyFields, i)
+						prefix := 0
+						if j < len(idx.Prefixes) {
+							prefix = idx.Prefixes[j]
+						}
+						primaryKeyPrefixes = append(primaryKeyPrefixes, prefix)
+						break
 					}
-					break
 				}
 			}
-			if primaryKey >= 0 {
+			if len(primaryKeyFields) > 0 {
 				break
 			}
 		}
 	}
+	if len(primaryKeyFields) == 1 {
+		primaryKey = primaryKeyFields[0]
+		primaryKeyPrefix = primaryKeyPrefixes[0]
+	}
 	store := row.NewStore(primaryKey)
 	store.PrimaryKeyPrefix = primaryKeyPrefix
+	store.PrimaryKeyFields = primaryKeyFields
+	store.PrimaryKeyPrefixes = primaryKeyPrefixes
 	db.Tables[strings.ToLower(schema.Name)] = &Table{ID: id, Schema: schema, Store: store}
 	return DB_SUCCESS
 }

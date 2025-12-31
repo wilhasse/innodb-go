@@ -11,6 +11,15 @@ func CursorSetLockMode(_ *Cursor, _ LockMode) ErrCode {
 	return DB_SUCCESS
 }
 
+// CursorSetMatchMode updates the cursor match mode.
+func CursorSetMatchMode(crsr *Cursor, mode MatchMode) ErrCode {
+	if crsr == nil {
+		return DB_ERROR
+	}
+	crsr.MatchMode = mode
+	return DB_SUCCESS
+}
+
 // CursorSetClusterAccess is a no-op for the in-memory cursor.
 func CursorSetClusterAccess(_ *Cursor) {
 }
@@ -36,7 +45,17 @@ func CursorUpdateRow(crsr *Cursor, oldTpl, newTpl *data.Tuple) ErrCode {
 	}
 	store := crsr.Table.Store
 	index := -1
-	if store.PrimaryKey >= 0 && store.PrimaryKey < len(oldTpl.Fields) {
+	if len(store.PrimaryKeyFields) > 0 {
+		for i, row := range store.Rows {
+			if row == nil {
+				continue
+			}
+			if tupleKeyEqual(row, oldTpl, store.PrimaryKeyFields, store.PrimaryKeyPrefixes) {
+				index = i
+				break
+			}
+		}
+	} else if store.PrimaryKey >= 0 && store.PrimaryKey < len(oldTpl.Fields) {
 		keyField := oldTpl.Fields[store.PrimaryKey]
 		for i, row := range store.Rows {
 			if row == nil || store.PrimaryKey >= len(row.Fields) {
@@ -89,6 +108,25 @@ func tupleEqual(a, b *data.Tuple) bool {
 	}
 	for i := range a.Fields {
 		if !fieldEqualPrefix(a.Fields[i], b.Fields[i], 0) {
+			return false
+		}
+	}
+	return true
+}
+
+func tupleKeyEqual(a, b *data.Tuple, cols []int, prefixes []int) bool {
+	if a == nil || b == nil {
+		return false
+	}
+	for i, col := range cols {
+		if col < 0 || col >= len(a.Fields) || col >= len(b.Fields) {
+			return false
+		}
+		prefix := 0
+		if i < len(prefixes) {
+			prefix = prefixes[i]
+		}
+		if !fieldEqualPrefix(a.Fields[col], b.Fields[col], prefix) {
 			return false
 		}
 	}

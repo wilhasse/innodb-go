@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"strings"
@@ -26,11 +27,21 @@ const (
 	CursorG
 )
 
+// MatchMode mirrors ib_match_t.
+type MatchMode int
+
+const (
+	IB_EXACT_MATCH MatchMode = iota
+	IB_CLOSEST_MATCH
+	IB_EXACT_PREFIX
+)
+
 // Cursor provides simple table iteration.
 type Cursor struct {
-	Table *Table
-	pos   int
-	Trx   *trx.Trx
+	Table     *Table
+	pos       int
+	Trx       *trx.Trx
+	MatchMode MatchMode
 }
 
 // CursorOpenTable opens a cursor on a table.
@@ -42,7 +53,7 @@ func CursorOpenTable(name string, trx *trx.Trx, out **Cursor) ErrCode {
 	if table == nil {
 		return DB_TABLE_NOT_FOUND
 	}
-	*out = &Cursor{Table: table, pos: 0, Trx: trx}
+	*out = &Cursor{Table: table, pos: 0, Trx: trx, MatchMode: IB_CLOSEST_MATCH}
 	return DB_SUCCESS
 }
 
@@ -131,39 +142,143 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 	if crsr == nil || crsr.Table == nil || tpl == nil {
 		return DB_ERROR
 	}
-	search, err := tupleReadI32(tpl, 0)
-	if err != DB_SUCCESS {
-		return err
+	keyFields := searchFieldCount(tpl)
+	if keyFields == 0 {
+		return DB_ERROR
 	}
+	pkFields := primaryKeyCols(crsr.Table)
+	if pkFields > 0 && keyFields > pkFields {
+		keyFields = pkFields
+	}
+	exactRequired := crsr.MatchMode == IB_EXACT_MATCH
+	prefixRequired := crsr.MatchMode == IB_EXACT_PREFIX
+
 	for i, row := range crsr.Table.Store.Rows {
-		val, err := tupleReadI32(row, 0)
-		if err != DB_SUCCESS {
+		if row == nil {
 			continue
 		}
+		cmp := compareTuplePrefix(row, tpl, keyFields)
 		switch mode {
 		case CursorGE:
-			if val >= search {
-				crsr.pos = i
-				if ret != nil {
-					if val == search {
-						*ret = 0
-					} else {
-						*ret = -1
-					}
-				}
-				return DB_SUCCESS
+			if cmp < 0 {
+				continue
 			}
 		case CursorG:
-			if val > search {
-				crsr.pos = i
-				if ret != nil {
-					*ret = -1
-				}
-				return DB_SUCCESS
+			if cmp <= 0 {
+				continue
 			}
 		}
+		if prefixRequired && !tupleHasPrefix(row, tpl, keyFields) {
+			continue
+		}
+		if exactRequired {
+			if cmp != 0 || (pkFields > 0 && keyFields != pkFields) {
+				continue
+			}
+		}
+		crsr.pos = i
+		if ret != nil {
+			if cmp == 0 && (pkFields == 0 || keyFields == pkFields) {
+				*ret = 0
+			} else {
+				*ret = -1
+			}
+		}
+		return DB_SUCCESS
 	}
 	return DB_RECORD_NOT_FOUND
+}
+
+func searchFieldCount(tpl *data.Tuple) int {
+	if tpl == nil {
+		return 0
+	}
+	for i := 0; i < len(tpl.Fields); i++ {
+		field := tpl.Fields[i]
+		if field.Len == data.UnivSQLNull {
+			return i + 1
+		}
+		if field.Len == 0 && len(field.Data) == 0 {
+			return i
+		}
+	}
+	return len(tpl.Fields)
+}
+
+func primaryKeyCols(table *Table) int {
+	if table == nil || table.Schema == nil {
+		return 0
+	}
+	for _, idx := range table.Schema.Indexes {
+		if idx != nil && idx.Clustered {
+			return len(idx.Columns)
+		}
+	}
+	return 0
+}
+
+func compareTuplePrefix(row, search *data.Tuple, n int) int {
+	if row == nil || search == nil {
+		switch {
+		case row == search:
+			return 0
+		case row == nil:
+			return -1
+		default:
+			return 1
+		}
+	}
+	if n > len(row.Fields) {
+		n = len(row.Fields)
+	}
+	if n > len(search.Fields) {
+		n = len(search.Fields)
+	}
+	for i := 0; i < n; i++ {
+		cmp := data.CompareFields(&row.Fields[i], &search.Fields[i])
+		if cmp != 0 {
+			return cmp
+		}
+	}
+	return 0
+}
+
+func tupleHasPrefix(row, search *data.Tuple, n int) bool {
+	if row == nil || search == nil {
+		return false
+	}
+	if n > len(row.Fields) {
+		n = len(row.Fields)
+	}
+	if n > len(search.Fields) {
+		n = len(search.Fields)
+	}
+	for i := 0; i < n; i++ {
+		if !fieldHasPrefix(row.Fields[i], search.Fields[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func fieldHasPrefix(row, search data.Field) bool {
+	if search.Len == data.UnivSQLNull {
+		return row.Len == data.UnivSQLNull
+	}
+	if search.Len == 0 && len(search.Data) == 0 {
+		return true
+	}
+	if row.Len == data.UnivSQLNull {
+		return false
+	}
+	slen := int(search.Len)
+	if slen > len(search.Data) {
+		slen = len(search.Data)
+	}
+	if slen > len(row.Data) {
+		return false
+	}
+	return bytes.Equal(row.Data[:slen], search.Data[:slen])
 }
 
 // ClustReadTupleCreate allocates a read tuple for the cursor.
