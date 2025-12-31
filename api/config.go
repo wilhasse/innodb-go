@@ -90,6 +90,9 @@ func CfgSet(name string, value any) ErrCode {
 	if err != DB_SUCCESS {
 		return err
 	}
+	if err := validateConfigValue(cfgVar.Name, assigned); err != DB_SUCCESS {
+		return err
+	}
 	cfgVar.Value = assigned
 	return DB_SUCCESS
 }
@@ -125,10 +128,46 @@ func registerDefaults() {
 		Value: IBTrue,
 	})
 	registerVar(&ConfigVar{
+		Name:  "additional_mem_pool_size",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(0),
+	})
+	registerVar(&ConfigVar{
+		Name:  "autoextend_increment",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(64),
+	})
+	registerVar(&ConfigVar{
+		Name:  "buffer_pool_size",
+		Type:  CfgTypeUlong,
+		Flag:  CfgFlagNone,
+		Value: uint64(128 << 20),
+	})
+	registerVar(&ConfigVar{
+		Name:  "checksums",
+		Type:  CfgTypeBool,
+		Flag:  CfgFlagNone,
+		Value: IBTrue,
+	})
+	registerVar(&ConfigVar{
 		Name:  "data_file_path",
 		Type:  CfgTypeText,
 		Flag:  CfgFlagReadOnlyAfterStartup,
 		Value: "",
+	})
+	registerVar(&ConfigVar{
+		Name:  "data_home_dir",
+		Type:  CfgTypeText,
+		Flag:  CfgFlagNone,
+		Value: "",
+	})
+	registerVar(&ConfigVar{
+		Name:  "doublewrite",
+		Type:  CfgTypeBool,
+		Flag:  CfgFlagNone,
+		Value: IBTrue,
 	})
 	registerVar(&ConfigVar{
 		Name:  "file_format",
@@ -137,11 +176,166 @@ func registerDefaults() {
 		Value: "",
 	})
 	registerVar(&ConfigVar{
+		Name:  "file_io_threads",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(4),
+	})
+	registerVar(&ConfigVar{
+		Name:  "file_per_table",
+		Type:  CfgTypeBool,
+		Flag:  CfgFlagNone,
+		Value: IBTrue,
+	})
+	registerVar(&ConfigVar{
+		Name:  "flush_log_at_trx_commit",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(1),
+	})
+	registerVar(&ConfigVar{
+		Name:  "flush_method",
+		Type:  CfgTypeText,
+		Flag:  CfgFlagNone,
+		Value: "fsync",
+	})
+	registerVar(&ConfigVar{
+		Name:  "force_recovery",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(0),
+	})
+	registerVar(&ConfigVar{
+		Name:  "lock_wait_timeout",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(50),
+	})
+	registerVar(&ConfigVar{
+		Name:  "log_buffer_size",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(8 << 20),
+	})
+	registerVar(&ConfigVar{
+		Name:  "log_file_size",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(48 << 20),
+	})
+	registerVar(&ConfigVar{
+		Name:  "log_files_in_group",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(2),
+	})
+	registerVar(&ConfigVar{
+		Name:  "log_group_home_dir",
+		Type:  CfgTypeText,
+		Flag:  CfgFlagNone,
+		Value: "",
+	})
+	registerVar(&ConfigVar{
+		Name:  "max_dirty_pages_pct",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(75),
+	})
+	registerVar(&ConfigVar{
+		Name:  "max_purge_lag",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(0),
+	})
+	registerVar(&ConfigVar{
+		Name:     "lru_old_blocks_pct",
+		Type:     CfgTypeUlint,
+		Flag:     CfgFlagNone,
+		MinValue: 5,
+		MaxValue: 95,
+		Value:    Ulint(37),
+	})
+	registerVar(&ConfigVar{
+		Name:  "lru_block_access_recency",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(0),
+	})
+	registerVar(&ConfigVar{
+		Name:  "open_files",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(0),
+	})
+	registerVar(&ConfigVar{
+		Name:  "pre_rollback_hook",
+		Type:  CfgTypeCallback,
+		Flag:  CfgFlagNone,
+		Value: Callback(nil),
+	})
+	registerVar(&ConfigVar{
+		Name:  "print_verbose_log",
+		Type:  CfgTypeBool,
+		Flag:  CfgFlagNone,
+		Value: IBFalse,
+	})
+	registerVar(&ConfigVar{
+		Name:  "rollback_on_timeout",
+		Type:  CfgTypeBool,
+		Flag:  CfgFlagNone,
+		Value: IBFalse,
+	})
+	registerVar(&ConfigVar{
+		Name:  "stats_sample_pages",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(8),
+	})
+	registerVar(&ConfigVar{
+		Name:  "status_file",
+		Type:  CfgTypeText,
+		Flag:  CfgFlagNone,
+		Value: "",
+	})
+	registerVar(&ConfigVar{
+		Name:  "sync_spin_loops",
+		Type:  CfgTypeUlint,
+		Flag:  CfgFlagNone,
+		Value: Ulint(30),
+	})
+	registerVar(&ConfigVar{
 		Name:  "version",
 		Type:  CfgTypeText,
 		Flag:  CfgFlagReadOnly,
 		Value: "go-port",
 	})
+}
+
+func validateConfigValue(name string, value any) ErrCode {
+	switch keyName(name) {
+	case "data_home_dir":
+		s, ok := value.(string)
+		if !ok {
+			return DB_INVALID_INPUT
+		}
+		if s == "" || strings.HasSuffix(s, "/") {
+			return DB_SUCCESS
+		}
+		return DB_INVALID_INPUT
+	case "flush_method":
+		s, ok := value.(string)
+		if !ok {
+			return DB_INVALID_INPUT
+		}
+		switch strings.ToLower(s) {
+		case "fsync", "o_direct", "littlesync":
+			return DB_SUCCESS
+		default:
+			return DB_INVALID_INPUT
+		}
+	default:
+		return DB_SUCCESS
+	}
 }
 
 func registerVar(cfgVar *ConfigVar) {
