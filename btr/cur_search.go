@@ -58,7 +58,16 @@ func (c *Cur) SearchToNthLevel(key []byte, mode SearchMode, level int) bool {
 			c.addPathInfo(ut.Ulint(idx), ut.Ulint(len(n.keys)))
 			c.Cursor = &Cursor{node: n, index: idx}
 			c.Flag = CurBinary
-			return c.Valid()
+			if !c.Valid() {
+				return false
+			}
+			if c.Tree != nil && c.Tree.isDeleted(c.Cursor.node.keys[c.Cursor.index]) {
+				if mode == SearchLE {
+					return c.Prev()
+				}
+				return c.Next()
+			}
+			return true
 		}
 
 		childIdx := c.Tree.childIndex(n.keys, key)

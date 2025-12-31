@@ -21,6 +21,7 @@ type Tree struct {
 	compare  CompareFunc
 	size     int
 	modCount uint64
+	deleted  map[string]struct{}
 }
 
 type node struct {
@@ -60,6 +61,9 @@ func (t *Tree) Search(key []byte) ([]byte, bool) {
 	if t == nil || t.root == nil {
 		return nil, false
 	}
+	if t.isDeleted(key) {
+		return nil, false
+	}
 	leaf := t.findLeaf(key)
 	if leaf == nil {
 		return nil, false
@@ -81,7 +85,14 @@ func (t *Tree) Insert(key, value []byte) bool {
 		}
 		t.size = 1
 		t.modCount++
+		if t.deleted != nil {
+			delete(t.deleted, string(key))
+		}
 		return false
+	}
+
+	if t.deleted != nil {
+		delete(t.deleted, string(key))
 	}
 
 	leaf := t.findLeaf(key)
@@ -109,6 +120,9 @@ func (t *Tree) Insert(key, value []byte) bool {
 func (t *Tree) Delete(key []byte) bool {
 	if t == nil || t.root == nil {
 		return false
+	}
+	if t.deleted != nil {
+		delete(t.deleted, string(key))
 	}
 	leaf := t.findLeaf(key)
 	if leaf == nil {

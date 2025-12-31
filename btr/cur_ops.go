@@ -128,7 +128,14 @@ func (c *Cur) Next() bool {
 	if c == nil || c.Cursor == nil {
 		return false
 	}
-	return c.Cursor.Next()
+	for {
+		if !c.Cursor.Next() {
+			return false
+		}
+		if c.Tree == nil || !c.Tree.isDeleted(c.Cursor.node.keys[c.Cursor.index]) {
+			return true
+		}
+	}
 }
 
 // Prev moves to the previous record.
@@ -136,7 +143,14 @@ func (c *Cur) Prev() bool {
 	if c == nil || c.Cursor == nil {
 		return false
 	}
-	return c.Cursor.Prev()
+	for {
+		if !c.Cursor.Prev() {
+			return false
+		}
+		if c.Tree == nil || !c.Tree.isDeleted(c.Cursor.node.keys[c.Cursor.index]) {
+			return true
+		}
+	}
 }
 
 // Search positions the cursor around the key using the provided mode.
@@ -175,7 +189,16 @@ func (c *Cur) OpenAtIndexSide(left bool) bool {
 			c.addPathInfo(ut.Ulint(idx), ut.Ulint(len(n.keys)))
 			c.Cursor = &Cursor{node: n, index: idx}
 			c.Flag = CurBinary
-			return c.Valid()
+			if !c.Valid() {
+				return false
+			}
+			if c.Tree != nil && c.Tree.isDeleted(c.Cursor.node.keys[c.Cursor.index]) {
+				if left {
+					return c.Next()
+				}
+				return c.Prev()
+			}
+			return true
 		}
 
 		childIdx := 0

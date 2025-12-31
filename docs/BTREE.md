@@ -64,3 +64,10 @@
 - Go mapping:
   - `InsertOnNonLeafLevel`, `AttachHalfPages`, `NodePtrDelete`, and `LiftPageUp` wrap internal node pointer updates.
   - Tree insertion now updates parent separator keys when leaf minima change.
+
+## IBGO-146: Delete marking + delete
+- C refs: `btr/btr0cur.c` (del-mark, optimistic/pessimistic delete)
+- Go mapping:
+  - `Cur.DelMarkSetClustRec`/`Cur.DelMarkSetSecRec` set delete marks; `Cur.DelUnmarkForIbuf` clears them.
+  - `Cur.OptimisticDelete`/`Cur.PessimisticDelete` perform physical deletes.
+  - Cursor navigation skips delete-marked keys for visibility.
