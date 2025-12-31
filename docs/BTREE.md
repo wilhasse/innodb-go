@@ -89,3 +89,8 @@
 - Go mapping:
   - `Pcur.MoveToNextPage`/`Pcur.MoveBackwardFromPage` move across leaf pages.
   - `Pcur.OpenOnUserRecFunc` aliases open on user rec helpers.
+
+## IBGO-150: Estimate + size
+- C refs: `btr/btr0cur.c` (estimate helpers), `btr/btr0btr.c` (size)
+- Go mapping:
+  - `EstimateNRowsInRange` and `EstimateNumberOfDifferentKeyVals` scan visible keys for deterministic estimates.
