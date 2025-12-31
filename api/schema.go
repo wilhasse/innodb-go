@@ -69,6 +69,9 @@ func TableSchemaCreate(name string, out **TableSchema, format TableFormat, pageS
 	if out == nil {
 		return DB_ERROR
 	}
+	if !validTableName(name) {
+		return DB_DATA_MISMATCH
+	}
 	if format == IB_TBL_COMPRESSED && !validCompressedPageSize(pageSize) {
 		return DB_INVALID_INPUT
 	}
@@ -283,6 +286,23 @@ func splitTableName(name string) (string, string) {
 		return "", ""
 	}
 	return parts[0], parts[1]
+}
+
+func validTableName(name string) bool {
+	if strings.Count(name, "/") != 1 {
+		return false
+	}
+	if strings.HasPrefix(name, "/") || strings.HasSuffix(name, "/") {
+		return false
+	}
+	db, table := splitTableName(name)
+	if db == "" || table == "" {
+		return false
+	}
+	if db == "." || db == ".." || table == "." || table == ".." {
+		return false
+	}
+	return true
 }
 
 func validCompressedPageSize(size int) bool {
