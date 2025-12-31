@@ -2,6 +2,8 @@ package page
 
 import "github.com/wilhasse/innodb-go/mach"
 
+const freeListNextOffset = 3
+
 // FreeListHead returns the offset of the first free record.
 func FreeListHead(page []byte) uint16 {
 	return HeaderGetField(page, PageFree)
@@ -54,7 +56,7 @@ func FreeListPop(page []byte, recLen uint16) uint16 {
 }
 
 func freeListNext(page []byte, recOff uint16) uint16 {
-	offs := int(recOff)
+	offs := int(recOff) + freeListNextOffset
 	if offs+2 > len(page) {
 		return 0
 	}
@@ -62,7 +64,7 @@ func freeListNext(page []byte, recOff uint16) uint16 {
 }
 
 func setFreeListNext(page []byte, recOff, next uint16) {
-	offs := int(recOff)
+	offs := int(recOff) + freeListNextOffset
 	if offs+2 > len(page) {
 		return
 	}
