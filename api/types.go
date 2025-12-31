@@ -47,6 +47,11 @@ type Charset struct {
 }
 
 const (
+	IB_COL_NONE      ColAttr = 0
+	IB_COL_UNSIGNED  ColAttr = 1 << iota
+)
+
+const (
 	IB_VARCHAR            ColType = 1
 	IB_CHAR               ColType = 2
 	IB_BINARY             ColType = 3
