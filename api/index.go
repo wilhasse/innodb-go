@@ -20,7 +20,7 @@ func IndexSchemaCreate(_ *trx.Trx, name string, tableName string, out **IndexSch
 	if table == nil || table.Schema == nil {
 		return DB_TABLE_NOT_FOUND
 	}
-	index := &IndexSchema{Name: name}
+	index := &IndexSchema{Name: name, Table: table.Schema}
 	table.Schema.Indexes = append(table.Schema.Indexes, index)
 	*out = index
 	return DB_SUCCESS

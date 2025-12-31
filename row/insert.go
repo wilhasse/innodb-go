@@ -12,8 +12,9 @@ var ErrDuplicateKey = errors.New("row: duplicate key")
 
 // Store holds rows for a table.
 type Store struct {
-	Rows       []*data.Tuple
-	PrimaryKey int
+	Rows             []*data.Tuple
+	PrimaryKey       int
+	PrimaryKeyPrefix int
 }
 
 // NewStore creates a row store with a primary key field index.
@@ -40,19 +41,37 @@ func (store *Store) hasKey(field data.Field) bool {
 		if row == nil || store.PrimaryKey < 0 || store.PrimaryKey >= len(row.Fields) {
 			continue
 		}
-		if fieldsEqual(field, row.Fields[store.PrimaryKey]) {
+		if fieldsEqualPrefix(field, row.Fields[store.PrimaryKey], store.PrimaryKeyPrefix) {
 			return true
 		}
 	}
 	return false
 }
 
-func fieldsEqual(a, b data.Field) bool {
-	if a.Len != b.Len {
-		return false
+func fieldsEqualPrefix(a, b data.Field, prefix int) bool {
+	if a.Len == data.UnivSQLNull || b.Len == data.UnivSQLNull {
+		return a.Len == b.Len
 	}
-	if a.Len == data.UnivSQLNull {
-		return true
+	if prefix <= 0 {
+		if a.Len != b.Len {
+			return false
+		}
+		return bytes.Equal(a.Data, b.Data)
 	}
-	return bytes.Equal(a.Data, b.Data)
+	alen := int(a.Len)
+	blen := int(b.Len)
+	if alen > len(a.Data) {
+		alen = len(a.Data)
+	}
+	if blen > len(b.Data) {
+		blen = len(b.Data)
+	}
+	n := prefix
+	if n > alen {
+		n = alen
+	}
+	if n > blen {
+		n = blen
+	}
+	return bytes.Equal(a.Data[:n], b.Data[:n])
 }

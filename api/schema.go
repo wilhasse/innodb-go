@@ -39,7 +39,9 @@ type ColumnSchema struct {
 type IndexSchema struct {
 	Name      string
 	Columns   []string
+	Prefixes  []int
 	Clustered bool
+	Table     *TableSchema
 }
 
 // Table holds schema and storage.
@@ -93,7 +95,7 @@ func TableSchemaAddIndex(schema *TableSchema, name string, out **IndexSchema) Er
 	if schema == nil {
 		return DB_ERROR
 	}
-	index := &IndexSchema{Name: name}
+	index := &IndexSchema{Name: name, Table: schema}
 	schema.Indexes = append(schema.Indexes, index)
 	if out != nil {
 		*out = index
@@ -102,11 +104,18 @@ func TableSchemaAddIndex(schema *TableSchema, name string, out **IndexSchema) Er
 }
 
 // IndexSchemaAddCol appends a column to an index schema.
-func IndexSchemaAddCol(index *IndexSchema, name string, _ int) ErrCode {
+func IndexSchemaAddCol(index *IndexSchema, name string, prefix int) ErrCode {
 	if index == nil {
 		return DB_ERROR
 	}
+	if prefix > 0 {
+		col := findSchemaColumn(index.Table, name)
+		if col == nil || !prefixAllowed(col.Type) {
+			return DB_SCHEMA_ERROR
+		}
+	}
 	index.Columns = append(index.Columns, name)
+	index.Prefixes = append(index.Prefixes, prefix)
 	return DB_SUCCESS
 }
 
@@ -179,6 +188,7 @@ func TableCreate(_ *trx.Trx, schema *TableSchema, tableID *uint64) ErrCode {
 		*tableID = id
 	}
 	primaryKey := -1
+	primaryKeyPrefix := 0
 	if schema != nil {
 		for _, idx := range schema.Indexes {
 			if idx == nil || !idx.Clustered || len(idx.Columns) == 0 {
@@ -188,6 +198,9 @@ func TableCreate(_ *trx.Trx, schema *TableSchema, tableID *uint64) ErrCode {
 			for i, col := range schema.Columns {
 				if strings.ToLower(col.Name) == colName {
 					primaryKey = i
+					if len(idx.Prefixes) > 0 {
+						primaryKeyPrefix = idx.Prefixes[0]
+					}
 					break
 				}
 			}
@@ -197,6 +210,7 @@ func TableCreate(_ *trx.Trx, schema *TableSchema, tableID *uint64) ErrCode {
 		}
 	}
 	store := row.NewStore(primaryKey)
+	store.PrimaryKeyPrefix = primaryKeyPrefix
 	db.Tables[strings.ToLower(schema.Name)] = &Table{ID: id, Schema: schema, Store: store}
 	return DB_SUCCESS
 }
@@ -228,6 +242,27 @@ func splitTableName(name string) (string, string) {
 func validCompressedPageSize(size int) bool {
 	switch size {
 	case 0, 1, 2, 4, 8, 16:
+		return true
+	default:
+		return false
+	}
+}
+
+func findSchemaColumn(schema *TableSchema, name string) *ColumnSchema {
+	if schema == nil {
+		return nil
+	}
+	for i := range schema.Columns {
+		if strings.EqualFold(schema.Columns[i].Name, name) {
+			return &schema.Columns[i]
+		}
+	}
+	return nil
+}
+
+func prefixAllowed(colType ColType) bool {
+	switch colType {
+	case IB_VARCHAR, IB_CHAR, IB_BINARY, IB_VARBINARY, IB_BLOB, IB_VARCHAR_ANYCHARSET, IB_CHAR_ANYCHARSET:
 		return true
 	default:
 		return false

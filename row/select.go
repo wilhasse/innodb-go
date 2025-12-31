@@ -19,7 +19,7 @@ func (store *Store) SelectByKey(key data.Field) *data.Tuple {
 		if row == nil || store.PrimaryKey >= len(row.Fields) {
 			continue
 		}
-		if fieldsEqual(key, row.Fields[store.PrimaryKey]) {
+		if fieldsEqualPrefix(key, row.Fields[store.PrimaryKey], store.PrimaryKeyPrefix) {
 			return row
 		}
 	}
