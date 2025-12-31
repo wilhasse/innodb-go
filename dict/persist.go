@@ -211,9 +211,35 @@ func tupleFieldUint64(row *data.Tuple, idx int) (uint64, bool) {
 	return readUint64(field.Data), true
 }
 
+func tupleFieldUint32(row *data.Tuple, idx int) (uint32, bool) {
+	if row == nil || idx < 0 || idx >= len(row.Fields) {
+		return 0, false
+	}
+	field := row.Fields[idx]
+	if len(field.Data) < 4 {
+		return 0, false
+	}
+	return readUint32(field.Data), true
+}
+
+func tupleFieldString(row *data.Tuple, idx int) (string, bool) {
+	if row == nil || idx < 0 || idx >= len(row.Fields) {
+		return "", false
+	}
+	field := row.Fields[idx]
+	return string(field.Data), true
+}
+
 func readUint64(buf []byte) uint64 {
 	if len(buf) < 8 {
 		return 0
 	}
 	return binary.BigEndian.Uint64(buf[:8])
+}
+
+func readUint32(buf []byte) uint32 {
+	if len(buf) < 4 {
+		return 0
+	}
+	return binary.BigEndian.Uint32(buf[:4])
 }

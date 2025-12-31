@@ -12,6 +12,19 @@ type SysRows struct {
 
 // DictBootstrap initializes the dictionary and system table rows.
 func DictBootstrap() {
+	DictInit()
+	if payload, err := loadPersisted(); err == nil && payload != nil {
+		DictSys.mu.Lock()
+		DictSys.Header = payload.Header
+		DictSys.RowID = dulintAdd(dulintAlignUp(DictSys.Header.RowID, DictHdrRowIDWriteMargin), DictHdrRowIDWriteMargin)
+		DictSys.SysRows.Tables = decodeRows(payload.Tables, sysTablesFields)
+		DictSys.SysRows.Columns = decodeRows(payload.Columns, sysColumnsFields)
+		DictSys.SysRows.Indexes = decodeRows(payload.Indexes, sysIndexesFields)
+		DictSys.SysRows.Fields = decodeRows(payload.Fields, sysFieldsFields)
+		DictSys.mu.Unlock()
+		rebuildFromSysRows()
+		return
+	}
 	DictCreate()
 }
 
