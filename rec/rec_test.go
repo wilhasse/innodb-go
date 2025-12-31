@@ -36,4 +36,16 @@ func TestRecConstants(t *testing.T) {
 	if RecOffsSmallSize != 10 {
 		t.Fatalf("RecOffsSmallSize=%d", RecOffsSmallSize)
 	}
+	if RecOffsCompact != uint32(1<<31) {
+		t.Fatalf("RecOffsCompact=%d", RecOffsCompact)
+	}
+	if RecOffsSQLNull != uint32(1<<31) {
+		t.Fatalf("RecOffsSQLNull=%d", RecOffsSQLNull)
+	}
+	if RecOffsExternal != uint32(1<<30) {
+		t.Fatalf("RecOffsExternal=%d", RecOffsExternal)
+	}
+	if RecOffsMask != RecOffsExternal-1 {
+		t.Fatalf("RecOffsMask=%d", RecOffsMask)
+	}
 }

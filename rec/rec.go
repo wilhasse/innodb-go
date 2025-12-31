@@ -19,4 +19,9 @@ const (
 	RecOffsHeaderSize = 2
 	RecOffsNormalSize = 100
 	RecOffsSmallSize  = 10
+
+	RecOffsCompact  = uint32(1 << 31)
+	RecOffsSQLNull  = uint32(1 << 31)
+	RecOffsExternal = uint32(1 << 30)
+	RecOffsMask     = RecOffsExternal - 1
 )
