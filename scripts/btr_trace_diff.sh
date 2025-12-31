@@ -22,6 +22,7 @@ cleanup() {
 trap cleanup EXIT
 
 cc \
+  -I"$oss_dir" \
   -I"$oss_dir/include" \
   -I"$oss_dir/tests" \
   "$c_src" \

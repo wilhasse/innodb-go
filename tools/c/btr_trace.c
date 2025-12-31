@@ -17,7 +17,8 @@ typedef struct row_t {
 
 static ib_err_t create_database(const char* name)
 {
-	(void) ib_database_drop(name);
+	ib_err_t drop_err = ib_database_drop(name);
+	(void) drop_err;
 	if (ib_database_create(name) != IB_TRUE) {
 		return(DB_ERROR);
 	}
