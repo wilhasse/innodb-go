@@ -159,6 +159,31 @@ func TupleReadI64(tpl *data.Tuple, col int, out *int64) ErrCode {
 	return DB_SUCCESS
 }
 
+// TupleWriteFloat writes a float32 value into a tuple.
+func TupleWriteFloat(tpl *data.Tuple, col int, val float32) ErrCode {
+	if tpl == nil || col < 0 || col >= len(tpl.Fields) {
+		return DB_ERROR
+	}
+	var buf [4]byte
+	binary.BigEndian.PutUint32(buf[:], math.Float32bits(val))
+	tpl.Fields[col].Data = append([]byte(nil), buf[:]...)
+	tpl.Fields[col].Len = 4
+	return DB_SUCCESS
+}
+
+// TupleReadFloat reads a float32 value from a tuple.
+func TupleReadFloat(tpl *data.Tuple, col int, out *float32) ErrCode {
+	if tpl == nil || out == nil || col < 0 || col >= len(tpl.Fields) {
+		return DB_ERROR
+	}
+	field := tpl.Fields[col]
+	if len(field.Data) < 4 {
+		return DB_ERROR
+	}
+	*out = math.Float32frombits(binary.BigEndian.Uint32(field.Data))
+	return DB_SUCCESS
+}
+
 // TupleWriteDouble writes a float64 value into a tuple.
 func TupleWriteDouble(tpl *data.Tuple, col int, val float64) ErrCode {
 	if tpl == nil || col < 0 || col >= len(tpl.Fields) {

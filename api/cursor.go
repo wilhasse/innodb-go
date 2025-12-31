@@ -90,12 +90,34 @@ func CursorInsertRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil {
 		return DB_ERROR
 	}
+	if err := validateNotNull(crsr, tpl); err != DB_SUCCESS {
+		return err
+	}
 	cloned := cloneTuple(tpl)
 	if err := crsr.Table.Store.Insert(cloned); err != nil {
 		if errors.Is(err, row.ErrDuplicateKey) {
 			return DB_DUPLICATE_KEY
 		}
 		return DB_ERROR
+	}
+	return DB_SUCCESS
+}
+
+func validateNotNull(crsr *Cursor, tpl *data.Tuple) ErrCode {
+	if crsr == nil || crsr.Table == nil || crsr.Table.Schema == nil || tpl == nil {
+		return DB_ERROR
+	}
+	for i, col := range crsr.Table.Schema.Columns {
+		if col.Attr&IB_COL_NOT_NULL == 0 {
+			continue
+		}
+		if i >= len(tpl.Fields) {
+			return DB_DATA_MISMATCH
+		}
+		field := tpl.Fields[i]
+		if field.Len == data.UnivSQLNull || (field.Len == 0 && len(field.Data) == 0) {
+			return DB_DATA_MISMATCH
+		}
 	}
 	return DB_SUCCESS
 }
