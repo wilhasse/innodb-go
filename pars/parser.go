@@ -7,12 +7,18 @@ type Parser struct {
 	lexer *Lexer
 	cur   Token
 	peek  Token
+	info  *Info
 }
 
 // NewParser creates a parser for the input string.
 func NewParser(input string) *Parser {
+	return NewParserWithInfo(input, nil)
+}
+
+// NewParserWithInfo creates a parser with bound values.
+func NewParserWithInfo(input string, info *Info) *Parser {
 	lex := NewLexer(input)
-	p := &Parser{lexer: lex}
+	p := &Parser{lexer: lex, info: info}
 	p.nextToken()
 	p.nextToken()
 	return p
@@ -45,11 +51,10 @@ func (p *Parser) parseSelect() (Statement, error) {
 		return nil, fmt.Errorf("pars: expected FROM")
 	}
 	p.nextToken()
-	if p.cur.Type != TokenIdent {
-		return nil, fmt.Errorf("pars: expected table name")
+	table, err := p.parseIdent()
+	if err != nil {
+		return nil, err
 	}
-	table := p.cur.Literal
-	p.nextToken()
 
 	var where Expr
 	if p.cur.Type == TokenWhere {
@@ -70,11 +75,11 @@ func (p *Parser) parseColumns() ([]string, error) {
 	}
 	var cols []string
 	for {
-		if p.cur.Type != TokenIdent {
-			return nil, fmt.Errorf("pars: expected column")
+		name, err := p.parseIdent()
+		if err != nil {
+			return nil, err
 		}
-		cols = append(cols, p.cur.Literal)
-		p.nextToken()
+		cols = append(cols, name)
 		if p.cur.Type != TokenComma {
 			break
 		}
@@ -140,17 +145,65 @@ func (p *Parser) parseEquality() (Expr, error) {
 
 func (p *Parser) parsePrimary() (Expr, error) {
 	switch p.cur.Type {
-	case TokenIdent:
-		expr := IdentExpr{Name: p.cur.Literal}
-		p.nextToken()
+	case TokenIdent, TokenBoundID:
+		name, err := p.parseIdent()
+		if err != nil {
+			return nil, err
+		}
+		expr := IdentExpr{Name: name}
 		return expr, nil
 	case TokenInt, TokenString, TokenNull:
 		expr := LiteralExpr{Value: p.cur.Literal, Kind: p.cur.Type}
 		p.nextToken()
 		return expr, nil
+	case TokenBoundLiteral:
+		name := p.cur.Literal
+		p.nextToken()
+		return p.parseBoundLiteral(name)
 	default:
 		return nil, fmt.Errorf("pars: unexpected token %v", p.cur.Type)
 	}
+}
+
+func (p *Parser) parseIdent() (string, error) {
+	switch p.cur.Type {
+	case TokenIdent:
+		name := p.cur.Literal
+		p.nextToken()
+		return name, nil
+	case TokenBoundID:
+		name := p.cur.Literal
+		p.nextToken()
+		return p.resolveBoundID(name)
+	default:
+		return "", fmt.Errorf("pars: expected identifier")
+	}
+}
+
+func (p *Parser) parseBoundLiteral(name string) (Expr, error) {
+	if p.info == nil {
+		return nil, fmt.Errorf("pars: unbound literal %s", name)
+	}
+	lit, ok := p.info.Literals[name]
+	if !ok {
+		return nil, fmt.Errorf("pars: unbound literal %s", name)
+	}
+	expr, err := boundLiteralExpr(lit)
+	if err != nil {
+		return nil, err
+	}
+	return expr, nil
+}
+
+func (p *Parser) resolveBoundID(name string) (string, error) {
+	if p.info == nil {
+		return "", fmt.Errorf("pars: unbound id %s", name)
+	}
+	bound, ok := p.info.IDs[name]
+	if !ok {
+		return "", fmt.Errorf("pars: unbound id %s", name)
+	}
+	return bound.ID, nil
 }
 
 func (p *Parser) nextToken() {
