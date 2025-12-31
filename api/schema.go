@@ -174,7 +174,25 @@ func TableCreate(_ *trx.Trx, schema *TableSchema, tableID *uint64) ErrCode {
 	if tableID != nil {
 		*tableID = id
 	}
-	store := row.NewStore(0)
+	primaryKey := -1
+	if schema != nil {
+		for _, idx := range schema.Indexes {
+			if idx == nil || !idx.Clustered || len(idx.Columns) == 0 {
+				continue
+			}
+			colName := strings.ToLower(idx.Columns[0])
+			for i, col := range schema.Columns {
+				if strings.ToLower(col.Name) == colName {
+					primaryKey = i
+					break
+				}
+			}
+			if primaryKey >= 0 {
+				break
+			}
+		}
+	}
+	store := row.NewStore(primaryKey)
 	db.Tables[strings.ToLower(schema.Name)] = &Table{ID: id, Schema: schema, Store: store}
 	return DB_SUCCESS
 }
