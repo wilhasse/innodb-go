@@ -112,3 +112,10 @@
 - Go mapping:
   - `ValidateIndex` and `CheckNodePtr` enforce ordering and leaf-link invariants.
   - Integration test in `tests/btr_validate_test.go` exercises random insert/update/delete.
+
+## IBGO-155: BTR trace comparison harness
+- C refs: `btr/btr0btr.c`, `btr/btr0cur.c`
+- Go mapping:
+  - `TraceOperations` runs a deterministic B-tree operation log with final key list.
+  - `cmd/btrtrace` prints the trace for comparison with the C reference harness.
+  - `btr/trace_test.go` locks the trace output hash.
