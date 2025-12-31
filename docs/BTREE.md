@@ -45,3 +45,9 @@
 - C refs: `btr/btr0btr.c` (btr_get_prev_user_rec, btr_get_next_user_rec), `btr/btr0pcur.c`
 - Go mapping:
   - `btr.GetNextUserRec`/`btr.GetPrevUserRec` step across linked pages via `page.Page` prev/next pointers.
+
+## IBGO-143: Optimistic leaf insert
+- C refs: `btr/btr0cur.c` (btr_cur_insert_if_possible, btr_cur_optimistic_insert)
+- Go mapping:
+  - `Cur.InsertIfPossible` inserts into a leaf when there is capacity and rejects duplicates.
+  - `Cur.OptimisticInsert` wraps the insert with lock/undo/report stubs.
