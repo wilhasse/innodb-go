@@ -23,34 +23,68 @@ type Value struct {
 	Bytes []byte
 }
 
+// NodeType identifies a query graph node.
+type NodeType int
+
+const (
+	NodeUnknown NodeType = iota
+	NodeIf
+	NodeElsif
+	NodeWhile
+	NodeFor
+	NodeExit
+	NodeReturn
+	NodeAssignment
+	NodeProc
+	NodeSymbol
+)
+
+// NodeRef provides access to the embedded node data.
+type NodeRef interface {
+	Base() *Node
+}
+
 // Node represents a simple evaluation node.
 type Node struct {
-	Val Value
+	Type   NodeType
+	Parent NodeRef
+	Next   NodeRef
+	Val    Value
+}
+
+// Base returns the embedded node data.
+func (n *Node) Base() *Node {
+	if n == nil {
+		return nil
+	}
+	return n
 }
 
 // NodeAllocValBuf allocates a buffer for node value bytes.
-func NodeAllocValBuf(node *Node, size int) []byte {
-	if node == nil {
+func NodeAllocValBuf(node NodeRef, size int) []byte {
+	base := nodeBase(node)
+	if base == nil {
 		return nil
 	}
 	if size <= 0 {
-		node.Val.Bytes = nil
-		node.Val.Kind = KindBytes
+		base.Val.Bytes = nil
+		base.Val.Kind = KindBytes
 		return nil
 	}
-	node.Val.Bytes = make([]byte, size)
-	node.Val.Kind = KindBytes
-	return node.Val.Bytes
+	base.Val.Bytes = make([]byte, size)
+	base.Val.Kind = KindBytes
+	return base.Val.Bytes
 }
 
 // NodeFreeValBuf releases any allocated buffer.
-func NodeFreeValBuf(node *Node) {
-	if node == nil {
+func NodeFreeValBuf(node NodeRef) {
+	base := nodeBase(node)
+	if base == nil {
 		return
 	}
-	node.Val.Bytes = nil
-	if node.Val.Kind == KindBytes {
-		node.Val.Kind = KindNull
+	base.Val.Bytes = nil
+	if base.Val.Kind == KindBytes {
+		base.Val.Kind = KindNull
 	}
 }
 
@@ -169,6 +203,13 @@ func EvalInstr(haystack, needle []byte) int {
 		return 0
 	}
 	return idx + 1
+}
+
+func nodeBase(node NodeRef) *Node {
+	if node == nil {
+		return nil
+	}
+	return node.Base()
 }
 
 func compareValues(left, right Value) (int, error) {
