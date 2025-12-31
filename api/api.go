@@ -94,6 +94,7 @@ func Shutdown(_ ShutdownFlag) ErrCode {
 	if err := CfgShutdown(); err != DB_SUCCESS {
 		return err
 	}
+	resetSchemaState()
 	started = false
 	activeDBFormat = ""
 	initialized = false

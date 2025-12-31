@@ -69,6 +69,20 @@ var (
 	nextTableID uint64
 )
 
+func resetSchemaState() {
+	schemaMu.Lock()
+	defer schemaMu.Unlock()
+	for _, db := range databases {
+		for _, table := range db.Tables {
+			if table != nil && table.Store != nil {
+				_ = table.Store.CloseFile()
+			}
+		}
+	}
+	databases = map[string]*Database{}
+	nextTableID = 0
+}
+
 // TableSchemaCreate initializes a table schema.
 func TableSchemaCreate(name string, out **TableSchema, format TableFormat, pageSize int) ErrCode {
 	if out == nil {
