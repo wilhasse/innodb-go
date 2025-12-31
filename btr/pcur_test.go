@@ -74,3 +74,41 @@ func TestPcurCopyStoredPosition(t *testing.T) {
 		t.Fatalf("expected stored state to copy")
 	}
 }
+
+func TestPcurMoveAcrossPages(t *testing.T) {
+	tree := NewTree(3, nil)
+	for _, key := range []string{"a", "b", "c", "d", "e", "f"} {
+		tree.Insert([]byte(key), []byte("v"+key))
+	}
+
+	pcur := NewPcur(tree)
+	if !pcur.OpenAtIndexSide(true) {
+		t.Fatalf("expected open at left")
+	}
+	start := pcur.Cur.Cursor.node
+	if start.next == nil {
+		t.Fatalf("expected multiple leaf pages")
+	}
+	expectNext := string(start.next.keys[0])
+	if !pcur.MoveToNextPage() {
+		t.Fatalf("expected move to next page")
+	}
+	if got := string(pcur.Cur.Key()); got != expectNext {
+		t.Fatalf("expected next page key %q, got %q", expectNext, got)
+	}
+
+	if !pcur.OpenAtIndexSide(false) {
+		t.Fatalf("expected open at right")
+	}
+	start = pcur.Cur.Cursor.node
+	if start.prev == nil {
+		t.Fatalf("expected previous leaf page")
+	}
+	expectPrev := string(start.prev.keys[len(start.prev.keys)-1])
+	if !pcur.MoveBackwardFromPage() {
+		t.Fatalf("expected move to previous page")
+	}
+	if got := string(pcur.Cur.Key()); got != expectPrev {
+		t.Fatalf("expected prev page key %q, got %q", expectPrev, got)
+	}
+}

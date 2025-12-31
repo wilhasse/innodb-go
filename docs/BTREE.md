@@ -83,3 +83,9 @@
 - Go mapping:
   - `PageReorganizeLow`/`PageReorganize` purge delete-marked keys.
   - `Compress`, `DiscardPage`, and level helpers are stubbed for now.
+
+## IBGO-149: Persistent cursor
+- C refs: `btr/btr0pcur.c`
+- Go mapping:
+  - `Pcur.MoveToNextPage`/`Pcur.MoveBackwardFromPage` move across leaf pages.
+  - `Pcur.OpenOnUserRecFunc` aliases open on user rec helpers.

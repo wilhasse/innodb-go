@@ -93,6 +93,11 @@ func (p *Pcur) OpenOnUserRec(key []byte, mode SearchMode) bool {
 	return false
 }
 
+// OpenOnUserRecFunc is an alias for OpenOnUserRec.
+func (p *Pcur) OpenOnUserRecFunc(key []byte, mode SearchMode) bool {
+	return p.OpenOnUserRec(key, mode)
+}
+
 // OpenAtIndexSide positions the cursor at the left or right side of the tree.
 func (p *Pcur) OpenAtIndexSide(left bool) bool {
 	if p == nil || p.Cur == nil {
@@ -124,6 +129,42 @@ func (p *Pcur) OpenAtRandom() bool {
 		return true
 	}
 	p.RelPos = PcurAfterLastInTree
+	return false
+}
+
+// MoveToNextPage moves the cursor to the first record on the next leaf.
+func (p *Pcur) MoveToNextPage() bool {
+	if p == nil || p.Cur == nil || !p.Cur.Valid() {
+		return false
+	}
+	start := p.Cur.Cursor.node
+	for p.Cur.Next() {
+		if p.Cur.Cursor.node != start {
+			p.RelPos = PcurOn
+			p.PosState = PcurIsPositioned
+			return true
+		}
+	}
+	p.RelPos = PcurAfterLastInTree
+	p.PosState = PcurWasPositioned
+	return false
+}
+
+// MoveBackwardFromPage moves the cursor to the last record on the previous leaf.
+func (p *Pcur) MoveBackwardFromPage() bool {
+	if p == nil || p.Cur == nil || !p.Cur.Valid() {
+		return false
+	}
+	start := p.Cur.Cursor.node
+	for p.Cur.Prev() {
+		if p.Cur.Cursor.node != start {
+			p.RelPos = PcurOn
+			p.PosState = PcurIsPositioned
+			return true
+		}
+	}
+	p.RelPos = PcurBeforeFirstInTree
+	p.PosState = PcurWasPositioned
 	return false
 }
 
