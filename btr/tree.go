@@ -16,10 +16,11 @@ type Record struct {
 
 // Tree is an in-memory B+ tree used as a stand-in for the on-disk variant.
 type Tree struct {
-	root    *node
-	order   int
-	compare CompareFunc
-	size    int
+	root     *node
+	order    int
+	compare  CompareFunc
+	size     int
+	modCount uint64
 }
 
 type node struct {
@@ -79,6 +80,7 @@ func (t *Tree) Insert(key, value []byte) bool {
 			values: [][]byte{cloneBytes(value)},
 		}
 		t.size = 1
+		t.modCount++
 		return false
 	}
 
@@ -86,12 +88,14 @@ func (t *Tree) Insert(key, value []byte) bool {
 	idx := t.keyIndex(leaf.keys, key)
 	if idx < len(leaf.keys) && t.compare(leaf.keys[idx], key) == 0 {
 		leaf.values[idx] = cloneBytes(value)
+		t.modCount++
 		return true
 	}
 
 	leaf.keys = insertBytes(leaf.keys, idx, cloneBytes(key))
 	leaf.values = insertBytes(leaf.values, idx, cloneBytes(value))
 	t.size++
+	t.modCount++
 
 	if len(leaf.keys) > t.maxKeys() {
 		t.splitLeaf(leaf)
@@ -116,6 +120,7 @@ func (t *Tree) Delete(key []byte) bool {
 	leaf.keys = removeBytes(leaf.keys, idx)
 	leaf.values = removeBytes(leaf.values, idx)
 	t.size--
+	t.modCount++
 
 	if leaf == t.root {
 		if len(leaf.keys) == 0 {
