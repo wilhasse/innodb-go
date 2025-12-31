@@ -41,7 +41,10 @@ type ColMeta struct {
 
 type ColType int
 type ColAttr uint32
-type Charset struct{}
+type Charset struct {
+	ID   Ulint
+	Name string
+}
 
 const (
 	IB_VARCHAR            ColType = 1
