@@ -231,6 +231,30 @@ func TableDrop(_ *trx.Trx, name string) ErrCode {
 	return DB_SUCCESS
 }
 
+// TableTruncate clears all rows in a table and returns a new table id.
+func TableTruncate(name string, tableID *uint64) ErrCode {
+	dbName, _ := splitTableName(name)
+	if dbName == "" {
+		return DB_INVALID_INPUT
+	}
+	schemaMu.Lock()
+	defer schemaMu.Unlock()
+	db := databases[strings.ToLower(dbName)]
+	if db == nil {
+		return DB_TABLE_NOT_FOUND
+	}
+	table := db.Tables[strings.ToLower(name)]
+	if table == nil {
+		return DB_TABLE_NOT_FOUND
+	}
+	table.Store.Rows = nil
+	table.ID = atomic.AddUint64(&nextTableID, 1)
+	if tableID != nil {
+		*tableID = table.ID
+	}
+	return DB_SUCCESS
+}
+
 func splitTableName(name string) (string, string) {
 	parts := strings.Split(name, "/")
 	if len(parts) != 2 {
