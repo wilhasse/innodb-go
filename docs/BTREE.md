@@ -51,3 +51,10 @@
 - Go mapping:
   - `Cur.InsertIfPossible` inserts into a leaf when there is capacity and rejects duplicates.
   - `Cur.OptimisticInsert` wraps the insert with lock/undo/report stubs.
+
+## IBGO-144: Page split + root raise
+- C refs: `btr/btr0btr.c` (split selection, insert fits, split insert, root raise)
+- Go mapping:
+  - `PageGetSplitRecToLeft/Right` and `PageGetSureSplitRec` choose split points on `page.Page`.
+  - `PageSplitAndInsert` wraps in-memory inserts and reports when a split is needed.
+  - `RootRaiseAndInsert` detects height increases when root splits.
