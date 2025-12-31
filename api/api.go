@@ -3,6 +3,14 @@ package api
 import (
 	"bytes"
 	"strings"
+
+	"github.com/wilhasse/innodb-go/btr"
+	"github.com/wilhasse/innodb-go/buf"
+	"github.com/wilhasse/innodb-go/fil"
+	"github.com/wilhasse/innodb-go/fsp"
+	"github.com/wilhasse/innodb-go/log"
+	"github.com/wilhasse/innodb-go/page"
+	"github.com/wilhasse/innodb-go/trx"
 )
 
 const (
@@ -45,6 +53,33 @@ func Startup(format string) ErrCode {
 	if format != "" && !isSupportedFormat(format) {
 		Log(nil, "InnoDB: format '%s' unknown.", format)
 		return DB_UNSUPPORTED
+	}
+	fil.VarInit()
+	fsp.Init()
+	page.PageRegistry = page.NewRegistry()
+	btr.CurVarInit()
+	btr.SearchVarInit()
+	log.Init()
+	trx.TrxVarInit()
+	trx.TrxSysVarInit()
+	trx.PurgeVarInit()
+	trx.RsegVarInit()
+	if !fil.SpaceCreate("system", 0, 0, fil.SpaceTablespace) {
+		return DB_ERROR
+	}
+	_ = fil.SpaceCreate("log", 1, 0, fil.SpaceLog)
+	var bufSize uint64
+	if err := CfgGet("buffer_pool_size", &bufSize); err == DB_SUCCESS && bufSize > 0 {
+		pageSize := buf.BufPoolDefaultPageSize
+		capacity := int(bufSize / uint64(pageSize))
+		if capacity < 1 {
+			capacity = 1
+		}
+		buf.SetDefaultPool(buf.NewPool(capacity, pageSize))
+	}
+	var ahi Bool
+	if err := CfgGet("adaptive_hash_index", &ahi); err == DB_SUCCESS && ahi == IBTrue {
+		btr.SearchSysCreate(1024)
 	}
 	activeDBFormat = format
 	started = true

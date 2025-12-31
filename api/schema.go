@@ -5,6 +5,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/wilhasse/innodb-go/btr"
+	"github.com/wilhasse/innodb-go/dict"
+	"github.com/wilhasse/innodb-go/fil"
 	"github.com/wilhasse/innodb-go/row"
 	"github.com/wilhasse/innodb-go/trx"
 )
@@ -47,9 +50,11 @@ type IndexSchema struct {
 
 // Table holds schema and storage.
 type Table struct {
-	ID     uint64
-	Schema *TableSchema
-	Store  *row.Store
+	ID      uint64
+	Schema  *TableSchema
+	Store   *row.Store
+	SpaceID uint32
+	Index   *dict.Index
 }
 
 // Database holds tables.
@@ -236,7 +241,25 @@ func TableCreate(_ *trx.Trx, schema *TableSchema, tableID *uint64) ErrCode {
 	store.PrimaryKeyPrefix = primaryKeyPrefix
 	store.PrimaryKeyFields = primaryKeyFields
 	store.PrimaryKeyPrefixes = primaryKeyPrefixes
-	db.Tables[strings.ToLower(schema.Name)] = &Table{ID: id, Schema: schema, Store: store}
+	spaceID := uint32(id + 1)
+	if !fil.SpaceCreate(schema.Name, spaceID, 0, fil.SpaceTablespace) {
+		return DB_ERROR
+	}
+	indexName := "PRIMARY"
+	for _, idx := range schema.Indexes {
+		if idx != nil && idx.Clustered && idx.Name != "" {
+			indexName = idx.Name
+			break
+		}
+	}
+	index := &dict.Index{Name: indexName, Clustered: true, SpaceID: spaceID}
+	btr.Create(index)
+	if err := attachTableFile(store, schema.Name); err != DB_SUCCESS {
+		btr.FreeRoot(index)
+		fil.SpaceDrop(spaceID)
+		return err
+	}
+	db.Tables[strings.ToLower(schema.Name)] = &Table{ID: id, Schema: schema, Store: store, SpaceID: spaceID, Index: index}
 	return DB_SUCCESS
 }
 
@@ -251,6 +274,19 @@ func TableDrop(_ *trx.Trx, name string) ErrCode {
 	db := databases[strings.ToLower(dbName)]
 	if db == nil {
 		return DB_TABLE_NOT_FOUND
+	}
+	table := db.Tables[strings.ToLower(name)]
+	if table == nil {
+		return DB_TABLE_NOT_FOUND
+	}
+	if table.Store != nil {
+		_ = table.Store.DeleteFile()
+	}
+	if table.Index != nil {
+		btr.FreeRoot(table.Index)
+	}
+	if table.SpaceID != 0 {
+		fil.SpaceDrop(table.SpaceID)
 	}
 	delete(db.Tables, strings.ToLower(name))
 	return DB_SUCCESS
@@ -274,6 +310,9 @@ func TableTruncate(name string, tableID *uint64) ErrCode {
 	}
 	if table.Store != nil {
 		table.Store.Reset()
+	}
+	if table.Index != nil {
+		btr.FreeButNotRoot(table.Index)
 	}
 	table.ID = atomic.AddUint64(&nextTableID, 1)
 	if tableID != nil {

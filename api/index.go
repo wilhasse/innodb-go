@@ -53,7 +53,11 @@ func CursorOpenIndexUsingName(crsr *Cursor, indexName string, out **Cursor) ErrC
 			if crsr.Table.Store != nil {
 				tree = crsr.Table.Store.Tree
 			}
-			*out = &Cursor{Table: crsr.Table, Tree: tree, Trx: crsr.Trx, MatchMode: crsr.MatchMode}
+			cursor := &Cursor{Table: crsr.Table, Tree: tree, Trx: crsr.Trx, MatchMode: crsr.MatchMode}
+			if tree != nil {
+				cursor.pcur = btr.NewPcur(tree)
+			}
+			*out = cursor
 			return DB_SUCCESS
 		}
 	}

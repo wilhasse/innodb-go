@@ -121,6 +121,7 @@ func (store *Store) Reset() {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	store.Rows = nil
+	_ = store.TruncateFile()
 	store.rebuildIndex()
 }
 
@@ -158,7 +159,13 @@ func (store *Store) removeTuple(row *data.Tuple) bool {
 		delete(store.rowsByID, id)
 		if store.Tree != nil {
 			key := store.keyForInsert(row, id)
-			store.Tree.Delete(key)
+			cur := btr.NewCur(store.Tree)
+			if cur.Search(key, btr.SearchGE) && CompareKeys(cur.Key(), key) == 0 {
+				cur.OptimisticDelete()
+			} else {
+				store.Tree.Delete(key)
+			}
+			store.appendLog(storeOpDelete, key, nil)
 		}
 	}
 	for i, existing := range store.Rows {
@@ -205,9 +212,19 @@ func (store *Store) replaceTuple(oldRow, newRow *data.Tuple) error {
 	store.idByRow[newRow] = id
 	store.rowsByID[id] = newRow
 	if store.Tree != nil && !bytes.Equal(oldKey, newKey) {
-		store.Tree.Delete(oldKey)
-		store.Tree.Insert(newKey, encodeRowID(id))
+		cur := btr.NewCur(store.Tree)
+		if cur.Search(oldKey, btr.SearchGE) && CompareKeys(cur.Key(), oldKey) == 0 {
+			cur.OptimisticDelete()
+		} else {
+			store.Tree.Delete(oldKey)
+		}
+		val := encodeRowID(id)
+		cur = btr.NewCur(store.Tree)
+		if !cur.OptimisticInsert(newKey, val) {
+			store.Tree.Insert(newKey, val)
+		}
 	}
+	store.appendLog(storeOpUpdate, newKey, encodeRowID(id))
 	return nil
 }
 

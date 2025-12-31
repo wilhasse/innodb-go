@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 
+	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
 	"github.com/wilhasse/innodb-go/row"
 )
@@ -49,36 +50,7 @@ func CursorUpdateRow(crsr *Cursor, oldTpl, newTpl *data.Tuple) ErrCode {
 		crsr.lastKey = crsr.treeCur.Key()
 	}
 	store := crsr.Table.Store
-	var target *data.Tuple
-	if len(store.PrimaryKeyFields) > 0 {
-		for _, row := range store.Rows {
-			if row == nil {
-				continue
-			}
-			if tupleKeyEqual(row, oldTpl, store.PrimaryKeyFields, store.PrimaryKeyPrefixes) {
-				target = row
-				break
-			}
-		}
-	} else if store.PrimaryKey >= 0 && store.PrimaryKey < len(oldTpl.Fields) {
-		keyField := oldTpl.Fields[store.PrimaryKey]
-		for _, row := range store.Rows {
-			if row == nil || store.PrimaryKey >= len(row.Fields) {
-				continue
-			}
-			if fieldEqualPrefix(keyField, row.Fields[store.PrimaryKey], store.PrimaryKeyPrefix) {
-				target = row
-				break
-			}
-		}
-	} else {
-		for _, row := range store.Rows {
-			if tupleEqual(row, oldTpl) {
-				target = row
-				break
-			}
-		}
-	}
+	target := findRowForUpdate(crsr, oldTpl)
 	if target == nil {
 		return DB_RECORD_NOT_FOUND
 	}
@@ -93,7 +65,71 @@ func CursorUpdateRow(crsr *Cursor, oldTpl, newTpl *data.Tuple) ErrCode {
 		return DB_ERROR
 	}
 	crsr.treeCur = nil
+	if crsr.pcur != nil {
+		crsr.pcur.Init()
+	}
 	return DB_SUCCESS
+}
+
+func findRowForUpdate(crsr *Cursor, tpl *data.Tuple) *data.Tuple {
+	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil || crsr.Tree == nil || tpl == nil {
+		return nil
+	}
+	store := crsr.Table.Store
+	keyFields := searchFieldCount(tpl)
+	if keyFields == 0 {
+		return nil
+	}
+	pkFields := primaryKeyCols(crsr.Table)
+	if pkFields > 0 && keyFields > pkFields {
+		keyFields = pkFields
+	}
+	searchKey := store.KeyForSearch(tpl, keyFields)
+	if len(searchKey) == 0 {
+		return nil
+	}
+	pcur := ensurePcur(crsr)
+	if pcur == nil || pcur.Cur == nil {
+		return nil
+	}
+	if !pcur.Cur.Search(searchKey, btr.SearchGE) {
+		return nil
+	}
+	for pcur.Cur.Valid() {
+		rowID, ok := row.DecodeRowID(pcur.Cur.Value())
+		if !ok {
+			if !pcur.Cur.Next() {
+				break
+			}
+			continue
+		}
+		rowTuple := store.RowByID(rowID)
+		if rowTuple == nil {
+			if !pcur.Cur.Next() {
+				break
+			}
+			continue
+		}
+		if len(store.PrimaryKeyFields) > 0 {
+			if tupleKeyEqual(rowTuple, tpl, store.PrimaryKeyFields, store.PrimaryKeyPrefixes) {
+				crsr.treeCur = pcur.Cur.Cursor
+				return rowTuple
+			}
+		} else if store.PrimaryKey >= 0 && store.PrimaryKey < len(tpl.Fields) {
+			keyField := tpl.Fields[store.PrimaryKey]
+			if store.PrimaryKey < len(rowTuple.Fields) && fieldEqualPrefix(keyField, rowTuple.Fields[store.PrimaryKey], store.PrimaryKeyPrefix) {
+				crsr.treeCur = pcur.Cur.Cursor
+				return rowTuple
+			}
+		} else if tupleEqual(rowTuple, tpl) {
+			crsr.treeCur = pcur.Cur.Cursor
+			return rowTuple
+		}
+		if !pcur.Cur.Next() {
+			break
+		}
+	}
+	return nil
 }
 
 // CursorDeleteRow deletes the row at the current cursor position.

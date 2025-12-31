@@ -7,6 +7,7 @@ import (
 
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
+	ibos "github.com/wilhasse/innodb-go/os"
 )
 
 // ErrDuplicateKey reports a duplicate primary key insertion.
@@ -20,6 +21,9 @@ type Store struct {
 	PrimaryKeyFields   []int
 	PrimaryKeyPrefixes []int
 	Tree               *btr.Tree
+	file               ibos.File
+	filePath           string
+	fileOffset         int64
 	nextRowID          uint64
 	rowsByID           map[uint64]*data.Tuple
 	idByRow            map[*data.Tuple]uint64
@@ -55,7 +59,12 @@ func (store *Store) Insert(tuple *data.Tuple) error {
 	}
 	if store.Tree != nil {
 		key := store.keyForInsert(tuple, id)
-		store.Tree.Insert(key, encodeRowID(id))
+		val := encodeRowID(id)
+		cur := btr.NewCur(store.Tree)
+		if !cur.OptimisticInsert(key, val) {
+			store.Tree.Insert(key, val)
+		}
+		store.appendLog(storeOpInsert, key, val)
 	}
 	return nil
 }
