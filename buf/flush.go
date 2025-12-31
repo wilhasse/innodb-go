@@ -35,7 +35,7 @@ func (p *Pool) FlushLRU(limit int) int {
 		limit = len(p.pages)
 	}
 	flushed := 0
-	for e := p.lru.Back(); e != nil && flushed < limit; e = e.Prev() {
+	for e := p.lru.back(); e != nil && flushed < limit; e = p.lru.prev(e) {
 		page := e.Value.(*Page)
 		if page.Dirty {
 			page.Dirty = false

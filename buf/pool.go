@@ -25,6 +25,7 @@ type Page struct {
 	ID       PageID
 	Data     []byte
 	Dirty    bool
+	IsOld    bool
 	PinCount int
 	lruElem  *list.Element
 }
@@ -45,7 +46,7 @@ type Pool struct {
 	capacity int
 	pageSize int
 	pages    map[PageID]*Page
-	lru      list.List
+	lru      *LRU
 	hits     uint64
 	misses   uint64
 	evicts   uint64
@@ -63,6 +64,7 @@ func NewPool(capacity int, pageSize int) *Pool {
 		capacity: capacity,
 		pageSize: pageSize,
 		pages:    make(map[PageID]*Page, capacity),
+		lru:      NewLRU(LruOldRatioDefault),
 	}
 }
 
@@ -77,7 +79,7 @@ func (p *Pool) Fetch(space, pageNo uint32) (*Page, bool, error) {
 	id := PageID{Space: space, PageNo: pageNo}
 	if page, ok := p.pages[id]; ok {
 		page.PinCount++
-		p.lru.MoveToFront(page.lruElem)
+		p.lru.Touch(page)
 		p.hits++
 		return page, true, nil
 	}
@@ -93,7 +95,7 @@ func (p *Pool) Fetch(space, pageNo uint32) (*Page, bool, error) {
 		Data:     make([]byte, p.pageSize),
 		PinCount: 1,
 	}
-	page.lruElem = p.lru.PushFront(page)
+	p.lru.Add(page)
 	p.pages[id] = page
 	p.misses++
 	return page, false, nil
@@ -162,13 +164,13 @@ func (p *Pool) Stats() PoolStats {
 }
 
 func (p *Pool) evictOne() bool {
-	for e := p.lru.Back(); e != nil; e = e.Prev() {
+	for e := p.lru.back(); e != nil; e = p.lru.prev(e) {
 		page := e.Value.(*Page)
 		if page.PinCount > 0 {
 			continue
 		}
 		delete(p.pages, page.ID)
-		p.lru.Remove(e)
+		p.lru.Remove(page)
 		p.evicts++
 		return true
 	}
