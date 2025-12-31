@@ -49,6 +49,7 @@ type Charset struct {
 const (
 	IB_COL_NONE      ColAttr = 0
 	IB_COL_UNSIGNED  ColAttr = 1 << iota
+	IB_COL_NOT_NULL
 )
 
 const (

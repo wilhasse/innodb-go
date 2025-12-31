@@ -33,6 +33,7 @@ func TrxCommit(ibTrx *trx.Trx) ErrCode {
 		return DB_ERROR
 	}
 	trx.TrxCommit(ibTrx)
+	clearSchemaLock(ibTrx)
 	return DB_SUCCESS
 }
 
@@ -42,6 +43,7 @@ func TrxRollback(ibTrx *trx.Trx) ErrCode {
 		return DB_ERROR
 	}
 	trx.TrxRollback(ibTrx)
+	clearSchemaLock(ibTrx)
 	return DB_SUCCESS
 }
 
@@ -67,6 +69,7 @@ func TrxRelease(ibTrx *trx.Trx) ErrCode {
 	if ibTrx == nil {
 		return DB_ERROR
 	}
+	clearSchemaLock(ibTrx)
 	trx.TrxRelease(ibTrx)
 	return DB_SUCCESS
 }

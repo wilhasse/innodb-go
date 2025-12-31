@@ -124,7 +124,11 @@ func TableSchemaDelete(_ *TableSchema) {
 }
 
 // SchemaLockExclusive is a no-op lock stub.
-func SchemaLockExclusive(_ *trx.Trx) ErrCode {
+func SchemaLockExclusive(trx *trx.Trx) ErrCode {
+	if trx == nil {
+		return DB_ERROR
+	}
+	lockSchema(trx)
 	return DB_SUCCESS
 }
 
