@@ -41,6 +41,7 @@ type IndexSchema struct {
 	Columns   []string
 	Prefixes  []int
 	Clustered bool
+	Unique    bool
 	Table     *TableSchema
 }
 
@@ -125,6 +126,15 @@ func IndexSchemaSetClustered(index *IndexSchema) ErrCode {
 		return DB_ERROR
 	}
 	index.Clustered = true
+	return DB_SUCCESS
+}
+
+// IndexSchemaSetUnique marks an index as unique.
+func IndexSchemaSetUnique(index *IndexSchema) ErrCode {
+	if index == nil {
+		return DB_ERROR
+	}
+	index.Unique = true
 	return DB_SUCCESS
 }
 

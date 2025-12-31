@@ -71,7 +71,11 @@ func TableSchemaVisit(trx *trx.Trx, name string, visitor *SchemaVisitor, arg any
 				if idx.Clustered {
 					clustered = IBTrue
 				}
-				if visitor.VisitIndex(arg, idx.Name, clustered, IBFalse, len(idx.Columns)) != 0 {
+				unique := IBFalse
+				if idx.Unique {
+					unique = IBTrue
+				}
+				if visitor.VisitIndex(arg, idx.Name, clustered, unique, len(idx.Columns)) != 0 {
 					return DB_ERROR
 				}
 			}
