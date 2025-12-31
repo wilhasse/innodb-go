@@ -106,3 +106,9 @@
 - Go mapping:
   - `SearchSysCreate`/`SearchSysClose` manage an in-tree hash index.
   - `SearchBuildPageHashIndex` and `SearchGuessOnHash` provide deterministic hash lookups.
+
+## IBGO-153: Validation + integration tests
+- C refs: `btr/btr0btr.c` (btr_check_node_ptr, btr_validate_index)
+- Go mapping:
+  - `ValidateIndex` and `CheckNodePtr` enforce ordering and leaf-link invariants.
+  - Integration test in `tests/btr_validate_test.go` exercises random insert/update/delete.
