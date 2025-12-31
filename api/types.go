@@ -43,5 +43,20 @@ type ColType int
 type ColAttr uint32
 type Charset struct{}
 
+const (
+	IB_VARCHAR            ColType = 1
+	IB_CHAR               ColType = 2
+	IB_BINARY             ColType = 3
+	IB_VARBINARY          ColType = 4
+	IB_BLOB               ColType = 5
+	IB_INT                ColType = 6
+	IB_SYS                ColType = 8
+	IB_FLOAT              ColType = 9
+	IB_DOUBLE             ColType = 10
+	IB_DECIMAL            ColType = 11
+	IB_VARCHAR_ANYCHARSET ColType = 12
+	IB_CHAR_ANYCHARSET    ColType = 13
+)
+
 // ClientCompare mirrors ib_client_cmp_t.
 type ClientCompare func(meta *ColMeta, p1 []byte, p2 []byte) int
