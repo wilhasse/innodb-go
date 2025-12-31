@@ -28,5 +28,6 @@ type Table struct {
 	Space   uint32
 	Flags   uint32
 	Columns []Column
+	NDef    int
 	Indexes map[string]*Index
 }
