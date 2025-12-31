@@ -119,3 +119,9 @@
   - `TraceOperations` runs a deterministic B-tree operation log with final key list.
   - `cmd/btrtrace` prints the trace for comparison with the C reference harness.
   - `btr/trace_test.go` locks the trace output hash.
+
+## IBGO-156: C trace harness + Go/C diff script
+- C refs: `tests/ib_cursor.c`, `tests/ib_search.c`
+- Go mapping:
+  - `tools/c/btr_trace.c` emits the same trace using the embedded InnoDB API.
+  - `scripts/btr_trace_diff.sh` builds the C harness, runs both traces, and diffs output.
