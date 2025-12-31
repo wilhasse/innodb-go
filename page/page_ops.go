@@ -3,6 +3,8 @@ package page
 import (
 	"bytes"
 	"sort"
+
+	"github.com/wilhasse/innodb-go/rem"
 )
 
 const (
@@ -27,6 +29,7 @@ func (p *Page) Init(spaceID, pageNo uint32, pageType uint16) {
 	p.PageType = pageType
 	p.PrevPage = 0
 	p.NextPage = 0
+	p.NextHeapNo = rem.HeapNoSupremum + 1
 	p.Records = nil
 }
 
@@ -35,7 +38,13 @@ func (p *Page) RecordCount() int {
 	if p == nil {
 		return 0
 	}
-	return len(p.Records)
+	count := 0
+	for _, rec := range p.Records {
+		if isUserRecord(rec) {
+			count++
+		}
+	}
+	return count
 }
 
 // IsEmpty reports whether the page has no records.
@@ -48,8 +57,15 @@ func (p *Page) InsertRecord(rec Record) {
 	if p == nil {
 		return
 	}
+	if rec.Type == rem.RecordUser && rec.HeapNo == 0 {
+		if p.NextHeapNo < rem.HeapNoSupremum+1 {
+			p.NextHeapNo = rem.HeapNoSupremum + 1
+		}
+		rec.HeapNo = p.NextHeapNo
+		p.NextHeapNo++
+	}
 	idx := sort.Search(len(p.Records), func(i int) bool {
-		return bytes.Compare(p.Records[i].Key, rec.Key) >= 0
+		return compareRecordToKey(p.Records[i], rec.Key) >= 0
 	})
 	p.Records = append(p.Records, Record{})
 	copy(p.Records[idx+1:], p.Records[idx:])
@@ -62,9 +78,9 @@ func (p *Page) DeleteRecord(key []byte) bool {
 		return false
 	}
 	idx := sort.Search(len(p.Records), func(i int) bool {
-		return bytes.Compare(p.Records[i].Key, key) >= 0
+		return compareRecordToKey(p.Records[i], key) >= 0
 	})
-	if idx < len(p.Records) && bytes.Equal(p.Records[idx].Key, key) {
+	if idx < len(p.Records) && isUserRecord(p.Records[idx]) && bytes.Equal(p.Records[idx].Key, key) {
 		copy(p.Records[idx:], p.Records[idx+1:])
 		p.Records = p.Records[:len(p.Records)-1]
 		return true
@@ -78,9 +94,9 @@ func (p *Page) FindRecord(key []byte) *Record {
 		return nil
 	}
 	idx := sort.Search(len(p.Records), func(i int) bool {
-		return bytes.Compare(p.Records[i].Key, key) >= 0
+		return compareRecordToKey(p.Records[i], key) >= 0
 	})
-	if idx < len(p.Records) && bytes.Equal(p.Records[idx].Key, key) {
+	if idx < len(p.Records) && isUserRecord(p.Records[idx]) && bytes.Equal(p.Records[idx].Key, key) {
 		return &p.Records[idx]
 	}
 	return nil

@@ -1,21 +1,28 @@
 package page
 
-import "bytes"
+import (
+	"bytes"
+
+	"github.com/wilhasse/innodb-go/rem"
+)
 
 // Record represents a simple key/value record on a page.
 type Record struct {
-	Key   []byte
-	Value []byte
+	Type   rem.RecordType
+	HeapNo uint16
+	Key    []byte
+	Value  []byte
 }
 
 // Page holds ordered records.
 type Page struct {
-	SpaceID  uint32
-	PageNo   uint32
-	PageType uint16
-	PrevPage uint32
-	NextPage uint32
-	Records []Record
+	SpaceID    uint32
+	PageNo     uint32
+	PageType   uint16
+	PrevPage   uint32
+	NextPage   uint32
+	NextHeapNo uint16
+	Records    []Record
 }
 
 // Cursor points to a record within a page.
@@ -53,7 +60,11 @@ func (c *Cursor) First() bool {
 	if c == nil || c.Page == nil || len(c.Page.Records) == 0 {
 		return false
 	}
-	c.Index = 0
+	idx := nextUserIndex(c.Page.Records, 0)
+	if idx >= len(c.Page.Records) {
+		return false
+	}
+	c.Index = idx
 	return true
 }
 
@@ -62,7 +73,11 @@ func (c *Cursor) Last() bool {
 	if c == nil || c.Page == nil || len(c.Page.Records) == 0 {
 		return false
 	}
-	c.Index = len(c.Page.Records) - 1
+	idx := prevUserIndex(c.Page.Records, len(c.Page.Records)-1)
+	if idx < 0 {
+		return false
+	}
+	c.Index = idx
 	return true
 }
 
@@ -71,10 +86,15 @@ func (c *Cursor) Next() bool {
 	if c == nil || c.Page == nil {
 		return false
 	}
-	if c.Index+1 >= len(c.Page.Records) {
+	start := c.Index + 1
+	if start < 0 {
+		start = 0
+	}
+	idx := nextUserIndex(c.Page.Records, start)
+	if idx >= len(c.Page.Records) {
 		return false
 	}
-	c.Index++
+	c.Index = idx
 	return true
 }
 
@@ -83,10 +103,15 @@ func (c *Cursor) Prev() bool {
 	if c == nil || c.Page == nil {
 		return false
 	}
-	if c.Index-1 < 0 {
+	start := c.Index - 1
+	if start >= len(c.Page.Records) {
+		start = len(c.Page.Records) - 1
+	}
+	idx := prevUserIndex(c.Page.Records, start)
+	if idx < 0 {
 		return false
 	}
-	c.Index--
+	c.Index = idx
 	return true
 }
 
@@ -99,17 +124,18 @@ func (c *Cursor) Search(key []byte) bool {
 	low, high := 0, len(records)
 	for low < high {
 		mid := (low + high) / 2
-		if bytes.Compare(records[mid].Key, key) < 0 {
+		if compareRecordToKey(records[mid], key) < 0 {
 			low = mid + 1
 		} else {
 			high = mid
 		}
 	}
-	c.Index = low
-	if c.Index < len(records) && bytes.Equal(records[c.Index].Key, key) {
-		return true
+	idx := nextUserIndex(records, low)
+	if idx >= len(records) {
+		return false
 	}
-	return false
+	c.Index = idx
+	return bytes.Equal(records[idx].Key, key)
 }
 
 // Insert inserts a record at the current cursor position.
@@ -117,14 +143,11 @@ func (c *Cursor) Insert(rec Record) {
 	if c == nil || c.Page == nil {
 		return
 	}
-	idx := c.Index
-	if idx < 0 || idx > len(c.Page.Records) {
-		idx = len(c.Page.Records)
+	c.Page.InsertRecord(rec)
+	if c.Search(rec.Key) {
+		return
 	}
-	c.Page.Records = append(c.Page.Records, Record{})
-	copy(c.Page.Records[idx+1:], c.Page.Records[idx:])
-	c.Page.Records[idx] = rec
-	c.Index = idx
+	c.First()
 }
 
 // Delete removes the current record.
@@ -135,8 +158,10 @@ func (c *Cursor) Delete() {
 	if c.Index < 0 || c.Index >= len(c.Page.Records) {
 		return
 	}
-	copy(c.Page.Records[c.Index:], c.Page.Records[c.Index+1:])
-	c.Page.Records = c.Page.Records[:len(c.Page.Records)-1]
+	if !isUserRecord(c.Page.Records[c.Index]) {
+		return
+	}
+	c.Page.DeleteRecord(c.Page.Records[c.Index].Key)
 	if c.Index >= len(c.Page.Records) {
 		c.Index = len(c.Page.Records) - 1
 	}
