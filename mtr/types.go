@@ -11,17 +11,50 @@ const (
 	LogShortInserts LogMode = 24
 )
 
+// State tracks the lifecycle of a mini-transaction.
+type State int
+
+const (
+	StateActive State = iota
+	StateCommitting
+	StateCommitted
+)
+
+// MemoType describes the kind of object stored in the memo stack.
+type MemoType int
+
+const (
+	MemoPageSFix MemoType = iota
+	MemoPageXFix
+	MemoBufFix
+	MemoModify
+	MemoSLock
+	MemoXLock
+)
+
+// MemoSlot stores a memo object and its type.
+type MemoSlot struct {
+	Object any
+	Type   MemoType
+}
+
 // Mtr holds mini-transaction state and log buffer.
 type Mtr struct {
 	LogMode       LogMode
 	Log           *dyn.Array
 	Modifications bool
 	NLogRecs      int
+	State         State
+	Memo          []MemoSlot
 }
 
 // New creates a mini-transaction with an empty log buffer.
 func New() *Mtr {
-	return &Mtr{LogMode: LogAll, Log: dyn.New()}
+	return &Mtr{
+		LogMode: LogAll,
+		Log:     dyn.New(),
+		State:   StateActive,
+	}
 }
 
 // Reset clears the log contents and counters.
@@ -31,6 +64,8 @@ func (m *Mtr) Reset() {
 	}
 	m.Modifications = false
 	m.NLogRecs = 0
+	m.State = StateActive
+	m.Memo = m.Memo[:0]
 	if m.Log != nil {
 		m.Log.Free()
 	}
