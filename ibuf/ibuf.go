@@ -35,6 +35,7 @@ type bufferKey struct {
 type Buffer struct {
 	mu      sync.Mutex
 	entries map[bufferKey][]BufferEntry
+	bitmap  map[bufferKey]bool
 	count   uint64
 }
 
@@ -48,7 +49,10 @@ var (
 
 // InitAtDBStart initializes the insert buffer.
 func InitAtDBStart() {
-	InsertBuffer = &Buffer{entries: make(map[bufferKey][]BufferEntry)}
+	InsertBuffer = &Buffer{
+		entries: make(map[bufferKey][]BufferEntry),
+		bitmap:  make(map[bufferKey]bool),
+	}
 	FlushCount = 0
 	MaxSpaceID = 0
 }
@@ -84,6 +88,7 @@ func Insert(spaceID, pageNo uint32, data []byte) {
 		Data:    append([]byte(nil), data...),
 	}
 	InsertBuffer.entries[key] = append(InsertBuffer.entries[key], entry)
+	InsertBuffer.bitmap[key] = true
 	InsertBuffer.count++
 	if spaceID > MaxSpaceID {
 		MaxSpaceID = spaceID
@@ -114,9 +119,39 @@ func Delete(spaceID, pageNo uint32) {
 	key := bufferKey{spaceID: spaceID, pageNo: pageNo}
 	removed := len(InsertBuffer.entries[key])
 	delete(InsertBuffer.entries, key)
+	delete(InsertBuffer.bitmap, key)
 	if removed > 0 {
 		InsertBuffer.count -= uint64(removed)
 	}
+}
+
+// Merge applies buffered entries for a page and clears them.
+func Merge(spaceID, pageNo uint32, apply func(BufferEntry) error) error {
+	if InsertBuffer == nil {
+		return nil
+	}
+	entries := Get(spaceID, pageNo)
+	for _, entry := range entries {
+		if apply == nil {
+			continue
+		}
+		if err := apply(entry); err != nil {
+			return err
+		}
+	}
+	Delete(spaceID, pageNo)
+	return nil
+}
+
+// HasBuffered reports whether a page has buffered entries.
+func HasBuffered(spaceID, pageNo uint32) bool {
+	if InsertBuffer == nil {
+		return false
+	}
+	InsertBuffer.mu.Lock()
+	defer InsertBuffer.mu.Unlock()
+	key := bufferKey{spaceID: spaceID, pageNo: pageNo}
+	return InsertBuffer.bitmap[key]
 }
 
 // Count returns the total buffered entry count.

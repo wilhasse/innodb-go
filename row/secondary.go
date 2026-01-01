@@ -2,20 +2,26 @@ package row
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"hash/fnv"
 	"strings"
 
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
+	"github.com/wilhasse/innodb-go/dict"
+	"github.com/wilhasse/innodb-go/ibuf"
 )
 
 // SecondaryIndex tracks a secondary index tree and column mapping.
 type SecondaryIndex struct {
-	Name     string
-	Fields   []int
-	Prefixes []int
-	Unique   bool
-	Tree     *btr.Tree
+	Name        string
+	Fields      []int
+	Prefixes    []int
+	Unique      bool
+	Tree        *btr.Tree
+	IbufSpaceID uint32
+	IbufPageNo  uint32
 }
 
 // SecondaryIndex returns a secondary index by name.
@@ -76,6 +82,8 @@ func (store *Store) AddSecondaryIndex(name string, fields []int, prefixes []int,
 		Unique:   unique,
 		Tree:     btr.NewTree(storeTreeOrder, CompareKeys),
 	}
+	idx.IbufSpaceID = store.SpaceID
+	idx.IbufPageNo = ibufPageNoForIndex(idx.Name)
 	for id, row := range store.rowsByID {
 		if row == nil {
 			continue
@@ -164,6 +172,10 @@ func (store *Store) insertSecondaryIndexes(row *data.Tuple, rowID uint64) {
 		if len(key) == 0 {
 			continue
 		}
+		if shouldBufferSecondaryIndex(idx) {
+			ibuf.Insert(idx.IbufSpaceID, idx.IbufPageNo, encodeIbufEntry(key, rowID))
+			continue
+		}
 		idx.Tree.Insert(key, encodeRowID(rowID))
 	}
 }
@@ -217,4 +229,68 @@ func (store *Store) updateSecondaryIndexes(oldRow, newRow *data.Tuple, rowID uin
 		}
 	}
 	return nil
+}
+
+// MergeSecondaryIndexBuffer applies buffered entries for a secondary index.
+func (store *Store) MergeSecondaryIndexBuffer(index *SecondaryIndex) error {
+	if store == nil || index == nil || index.Tree == nil {
+		return nil
+	}
+	entries := ibuf.Get(index.IbufSpaceID, index.IbufPageNo)
+	if len(entries) == 0 {
+		return nil
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for _, entry := range entries {
+		key, rowID, ok := decodeIbufEntry(entry.Data)
+		if !ok || len(key) == 0 {
+			continue
+		}
+		index.Tree.Insert(key, encodeRowID(rowID))
+	}
+	ibuf.Delete(index.IbufSpaceID, index.IbufPageNo)
+	return nil
+}
+
+func shouldBufferSecondaryIndex(index *SecondaryIndex) bool {
+	if index == nil {
+		return false
+	}
+	idx := &dict.Index{Unique: index.Unique, Clustered: false}
+	return ibuf.ShouldTry(idx, false)
+}
+
+func ibufPageNoForIndex(name string) uint32 {
+	if name == "" {
+		return 1
+	}
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(strings.ToLower(name)))
+	sum := h.Sum32()
+	if sum == 0 {
+		return 1
+	}
+	return sum
+}
+
+func encodeIbufEntry(key []byte, rowID uint64) []byte {
+	buf := make([]byte, 4+len(key)+8)
+	binary.BigEndian.PutUint32(buf[:4], uint32(len(key)))
+	copy(buf[4:], key)
+	binary.BigEndian.PutUint64(buf[4+len(key):], rowID)
+	return buf
+}
+
+func decodeIbufEntry(data []byte) ([]byte, uint64, bool) {
+	if len(data) < 12 {
+		return nil, 0, false
+	}
+	keyLen := int(binary.BigEndian.Uint32(data[:4]))
+	if keyLen < 0 || 4+keyLen+8 > len(data) {
+		return nil, 0, false
+	}
+	key := append([]byte(nil), data[4:4+keyLen]...)
+	rowID := binary.BigEndian.Uint64(data[4+keyLen:])
+	return key, rowID, true
 }

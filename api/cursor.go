@@ -179,6 +179,11 @@ func CursorFirst(crsr *Cursor) ErrCode {
 	if crsr == nil || crsr.Table == nil {
 		return DB_ERROR
 	}
+	if crsr.Index != nil && crsr.Table.Store != nil {
+		if err := crsr.Table.Store.MergeSecondaryIndexBuffer(crsr.Index); err != nil {
+			return DB_ERROR
+		}
+	}
 	if crsr.usePageTree() {
 		cur, err := crsr.Table.Store.PageTree.First()
 		if err != nil {
@@ -549,6 +554,11 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 	}
 	if len(searchKey) == 0 {
 		return DB_ERROR
+	}
+	if crsr.Index != nil && store != nil {
+		if err := store.MergeSecondaryIndexBuffer(crsr.Index); err != nil {
+			return DB_ERROR
+		}
 	}
 	if crsr.usePageTree() && crsr.Index == nil && storeHasPrimaryKey(store) {
 		cur, exact, err := store.PageTree.Seek(searchKey, btr.SearchGE)

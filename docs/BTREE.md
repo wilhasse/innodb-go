@@ -167,3 +167,10 @@
   - `api.IndexCreate` now persists secondary index metadata in `dict` after building from rows.
   - `dict.DictPersistIndexCreate` updates SYS_* rows so indexes reload on restart.
   - `tests/restart_secondary_index_test.go` validates secondary index rebuild after restart.
+
+## IBGO-249: Insert buffer merge + bitmap tracking
+- C refs: `ibuf/ibuf0ibuf.c`
+- Go mapping:
+  - `ibuf` tracks buffered pages via bitmap state and merges entries on demand.
+  - `row.Store` buffers non-unique secondary index inserts and merges on index reads.
+  - `tests/ibuf_merge_test.go` and `ibuf/ibuf_test.go` cover buffering + merge paths.

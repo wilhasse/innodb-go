@@ -12,6 +12,9 @@ func TestInsertBufferOps(t *testing.T) {
 	Insert(1, 10, []byte("a"))
 	Insert(1, 10, []byte("b"))
 	Insert(2, 5, []byte("c"))
+	if !HasBuffered(1, 10) || !HasBuffered(2, 5) {
+		t.Fatalf("expected bitmap entries after insert")
+	}
 
 	entries := Get(1, 10)
 	if len(entries) != 2 {
@@ -26,6 +29,27 @@ func TestInsertBufferOps(t *testing.T) {
 	Delete(1, 10)
 	if Count() != 1 {
 		t.Fatalf("expected count 1 after delete, got %d", Count())
+	}
+	if HasBuffered(1, 10) {
+		t.Fatalf("expected bitmap cleared after delete")
+	}
+
+	Insert(3, 7, []byte("d"))
+	merged := 0
+	if err := Merge(3, 7, func(entry BufferEntry) error {
+		if string(entry.Data) != "d" {
+			t.Fatalf("unexpected merge data %q", entry.Data)
+		}
+		merged++
+		return nil
+	}); err != nil {
+		t.Fatalf("merge: %v", err)
+	}
+	if merged != 1 {
+		t.Fatalf("expected 1 merged entry, got %d", merged)
+	}
+	if HasBuffered(3, 7) {
+		t.Fatalf("expected bitmap cleared after merge")
 	}
 }
 
