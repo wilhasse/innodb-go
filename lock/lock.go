@@ -1,8 +1,9 @@
 package lock
 
 import (
-	"sync"
 	"unsafe"
+
+	"github.com/wilhasse/innodb-go/trx"
 )
 
 // RecordKey identifies a record within a table.
@@ -18,118 +19,86 @@ type Queue struct {
 	Last  *Lock
 }
 
-// Manager stores lock queues for tables and records.
-type Manager struct {
-	mu           sync.Mutex
-	tableQueues  map[string]*Queue
-	recordQueues map[RecordKey]*Queue
-}
-
-var system *Manager
-
 // GetSize returns the size of a lock struct in bytes.
 func GetSize() int {
 	return int(unsafe.Sizeof(Lock{}))
 }
 
-// SysCreate initializes the global lock system.
-func SysCreate(_ int) {
-	system = &Manager{
-		tableQueues:  make(map[string]*Queue),
-		recordQueues: make(map[RecordKey]*Queue),
-	}
-}
-
-// SysClose shuts down the global lock system.
-func SysClose() {
-	system = nil
-}
-
-// Sys returns the global lock manager.
-func Sys() *Manager {
-	return system
-}
-
-// NewManager creates a standalone lock manager.
-func NewManager() *Manager {
-	return &Manager{
-		tableQueues:  make(map[string]*Queue),
-		recordQueues: make(map[RecordKey]*Queue),
-	}
-}
-
 // AcquireTableLock appends a table lock to the queue.
-func (m *Manager) AcquireTableLock(trxID, table string, mode Mode) *Lock {
-	if m == nil {
+func (sys *LockSys) AcquireTableLock(trx *trx.Trx, table string, mode Mode) *Lock {
+	if sys == nil {
 		return nil
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	lock := &Lock{Type: LockTable, Mode: mode, TrxID: trxID, Table: table}
-	queue := m.tableQueues[table]
+	sys.mu.Lock()
+	defer sys.mu.Unlock()
+	lock := &Lock{Type: LockTable, Mode: mode, Trx: trx, Table: table}
+	queue := sys.tableHash[table]
 	if queue == nil {
 		queue = &Queue{}
-		m.tableQueues[table] = queue
+		sys.tableHash[table] = queue
 	}
 	queue.Append(lock)
+	sys.addLock(lock)
 	return lock
 }
 
 // AcquireRecordLock appends a record lock to the queue.
-func (m *Manager) AcquireRecordLock(trxID string, record RecordKey, mode Mode) *Lock {
-	if m == nil {
+func (sys *LockSys) AcquireRecordLock(trx *trx.Trx, record RecordKey, mode Mode) *Lock {
+	if sys == nil {
 		return nil
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	lock := &Lock{Type: LockRec, Mode: mode, TrxID: trxID, Record: record}
-	queue := m.recordQueues[record]
+	sys.mu.Lock()
+	defer sys.mu.Unlock()
+	lock := &Lock{Type: LockRec, Mode: mode, Trx: trx, Record: record}
+	queue := sys.recordHash[record]
 	if queue == nil {
 		queue = &Queue{}
-		m.recordQueues[record] = queue
+		sys.recordHash[record] = queue
 	}
 	queue.Append(lock)
+	sys.addLock(lock)
 	return lock
 }
 
 // Release removes a lock from its queue.
-func (m *Manager) Release(lock *Lock) {
-	if m == nil || lock == nil {
+func (sys *LockSys) Release(lock *Lock) {
+	if sys == nil || lock == nil {
 		return
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	sys.mu.Lock()
+	defer sys.mu.Unlock()
 	var queue *Queue
 	switch lock.Type {
 	case LockTable:
-		queue = m.tableQueues[lock.Table]
+		queue = sys.tableHash[lock.Table]
 	case LockRec:
-		queue = m.recordQueues[lock.Record]
+		queue = sys.recordHash[lock.Record]
 	}
 	if queue == nil {
 		return
 	}
 	queue.Remove(lock)
+	sys.removeLock(lock)
 }
 
 // TableQueue returns the queue for a table.
-func (m *Manager) TableQueue(table string) *Queue {
-	if m == nil {
+func (sys *LockSys) TableQueue(table string) *Queue {
+	if sys == nil {
 		return nil
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.tableQueues[table]
+	sys.mu.Lock()
+	defer sys.mu.Unlock()
+	return sys.tableHash[table]
 }
 
 // RecordQueue returns the queue for a record.
-func (m *Manager) RecordQueue(record RecordKey) *Queue {
-	if m == nil {
+func (sys *LockSys) RecordQueue(record RecordKey) *Queue {
+	if sys == nil {
 		return nil
 	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.recordQueues[record]
+	sys.mu.Lock()
+	defer sys.mu.Unlock()
+	return sys.recordHash[record]
 }
 
 // Append adds a lock to the queue tail.

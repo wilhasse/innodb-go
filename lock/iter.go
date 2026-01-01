@@ -1,5 +1,7 @@
 package lock
 
+import "github.com/wilhasse/innodb-go/trx"
+
 // UndefinedBitNo mirrors ULINT_UNDEFINED for record bits.
 const UndefinedBitNo = -1
 
@@ -18,7 +20,7 @@ type Lock struct {
 	Next   *Lock
 	Bits   []bool
 	Mode   Mode
-	TrxID  string
+	Trx    *trx.Trx
 	Table  string
 	Record RecordKey
 }
