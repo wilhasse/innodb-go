@@ -53,7 +53,7 @@ func collectRecordEntries(pageBytes []byte, offsets []uint16, nFields int) []rec
 			continue
 		}
 		recBytes := pageBytes[offInt:next]
-		tuple, err := rec.DecodeVar(recBytes, nFields, 0)
+		tuple, err := decodeRecordTuple(recBytes, nFields)
 		if err != nil {
 			continue
 		}
@@ -63,4 +63,21 @@ func collectRecordEntries(pageBytes []byte, offsets []uint16, nFields int) []rec
 		entries = append(entries, recordEntry{off: off, tuple: tuple})
 	}
 	return entries
+}
+
+func decodeRecordTuple(recBytes []byte, nFields int) (*data.Tuple, error) {
+	if nFields <= 0 {
+		return nil, nil
+	}
+	if len(recBytes) >= recordExtra && rec.HeaderInfoBits(recBytes)&rec.RecInfoMinRecFlag != 0 {
+		return rec.DecodeVar(recBytes, nFields, recordExtra)
+	}
+	tuple, err := rec.DecodeVar(recBytes, nFields, 0)
+	if err == nil {
+		return tuple, nil
+	}
+	if len(recBytes) >= recordExtra {
+		return rec.DecodeVar(recBytes, nFields, recordExtra)
+	}
+	return nil, err
 }

@@ -1,6 +1,7 @@
 package btr
 
 import (
+	"bytes"
 	"encoding/binary"
 
 	"github.com/wilhasse/innodb-go/data"
@@ -73,6 +74,7 @@ func encodeLeafRecord(key, value []byte) []byte {
 		return nil
 	}
 	rec.HeaderSetStatus(recBytes, rec.RecStatusOrdinary)
+	rec.HeaderSetInfoBits(recBytes, rec.RecInfoMinRecFlag)
 	return recBytes
 }
 
@@ -96,6 +98,7 @@ func encodeNodePtrRecord(key []byte, childPage uint32) []byte {
 		return nil
 	}
 	rec.HeaderSetStatus(recBytes, rec.RecStatusNodePtr)
+	rec.HeaderSetInfoBits(recBytes, rec.RecInfoMinRecFlag)
 	return recBytes
 }
 
@@ -222,4 +225,68 @@ func findChildPage(records [][]byte, key []byte, compare CompareFunc) (uint32, b
 		}
 	}
 	return child, found
+}
+
+func rebuildRecordPage(pageBytes []byte, records [][]byte) bool {
+	if pageBytes == nil {
+		return false
+	}
+	clear(pageBytes)
+	page.HeaderSetField(pageBytes, page.PageNDirSlots, 0)
+	page.HeaderSetField(pageBytes, page.PageHeapTop, uint16(page.PageDataOffset))
+	page.HeaderSetField(pageBytes, page.PageNHeap, 0x8000)
+	page.HeaderSetField(pageBytes, page.PageFree, 0)
+	page.HeaderSetField(pageBytes, page.PageGarbage, 0)
+	page.HeaderSetField(pageBytes, page.PageNRecs, 0)
+	count := 0
+	for _, recBytes := range records {
+		if recBytes == nil {
+			continue
+		}
+		if _, ok := page.InsertRecordBytes(pageBytes, recBytes); !ok {
+			return false
+		}
+		count++
+	}
+	page.PageSetNRecs(pageBytes, uint16(count))
+	return true
+}
+
+func findRecordOffset(pageBytes []byte, key []byte) uint16 {
+	if pageBytes == nil || key == nil {
+		return 0
+	}
+	offsets := collectSlotOffsets(pageBytes)
+	if len(offsets) == 0 {
+		return 0
+	}
+	heapTop := int(page.HeaderGetField(pageBytes, page.PageHeapTop))
+	if heapTop == 0 {
+		heapTop = int(page.PageDataOffset)
+	}
+	for i, off := range offsets {
+		offInt := int(off)
+		if offInt < int(page.PageDataOffset) || offInt >= heapTop {
+			continue
+		}
+		next := heapTop
+		if i+1 < len(offsets) {
+			next = int(offsets[i+1])
+		}
+		if next <= offInt {
+			continue
+		}
+		recBytes := pageBytes[offInt:next]
+		if rec.HeaderInfoBits(recBytes)&rec.RecInfoDeletedFlag != 0 {
+			continue
+		}
+		recKey, ok := recordKey(recBytes)
+		if !ok {
+			continue
+		}
+		if bytes.Compare(recKey, key) == 0 {
+			return off
+		}
+	}
+	return 0
 }

@@ -132,3 +132,10 @@
   - `btr.PageTree` stores records in page bytes, with leaf/node records encoded via `rec`.
   - Page rebuilds use `page` header/directory helpers and set `fil` prev/next links on leaf splits.
   - `btr/page_tree_test.go` covers insert/search and split traversal across pages.
+
+## IBGO-244: Page record insert/delete + directory maintenance
+- C refs: `page/page0page.c`, `btr/btr0cur.c`
+- Go mapping:
+  - `LeafInsertBytes` now inserts records in key order and rebuilds page directory/heap offsets.
+  - `SearchRecordBytes` decodes records with or without compact headers; delete-mark + reorg paths stay intact.
+  - `btr/insert_test.go` adds ordering and garbage/free-list cleanup coverage.
