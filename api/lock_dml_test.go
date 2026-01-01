@@ -53,15 +53,21 @@ func TestInsertLockWait(t *testing.T) {
 	if err := CursorOpenTable(tableName, trx1, &cur1); err != DB_SUCCESS {
 		t.Fatalf("CursorOpenTable trx1: %v", err)
 	}
-	tpl1 := ClustReadTupleCreate(cur1)
-	if tpl1 == nil {
-		t.Fatalf("ClustReadTupleCreate trx1 returned nil")
+	if err := CursorSetLockMode(cur1, LockIX); err != DB_SUCCESS {
+		t.Fatalf("CursorSetLockMode: %v", err)
 	}
-	if err := TupleWriteU32(tpl1, 0, 1); err != DB_SUCCESS {
-		t.Fatalf("TupleWriteU32 trx1: %v", err)
+	search := ClustSearchTupleCreate(cur1)
+	if search == nil {
+		t.Fatalf("ClustSearchTupleCreate search returned nil")
 	}
-	if err := CursorInsertRow(cur1, tpl1); err != DB_SUCCESS {
-		t.Fatalf("CursorInsertRow trx1: %v", err)
+	if err := TupleWriteU32(search, 0, 1); err != DB_SUCCESS {
+		t.Fatalf("TupleWriteU32 search: %v", err)
+	}
+	if err := CursorSetMatchMode(cur1, IB_EXACT_MATCH); err != DB_SUCCESS {
+		t.Fatalf("CursorSetMatchMode: %v", err)
+	}
+	if err := CursorMoveTo(cur1, search, CursorGE, nil); err != DB_RECORD_NOT_FOUND {
+		t.Fatalf("CursorMoveTo err=%v, want DB_RECORD_NOT_FOUND", err)
 	}
 
 	trx2 := TrxBegin(IB_TRX_REPEATABLE_READ)
@@ -81,7 +87,9 @@ func TestInsertLockWait(t *testing.T) {
 		done <- CursorInsertRow(cur2, tpl2)
 	}()
 	time.Sleep(20 * time.Millisecond)
-	_ = TrxRollback(trx1)
+	if err := TrxCommit(trx1); err != DB_SUCCESS {
+		t.Fatalf("TrxCommit trx1: %v", err)
+	}
 	if err := waitErr(t, done, time.Second); err != DB_SUCCESS {
 		t.Fatalf("CursorInsertRow trx2=%v, want DB_SUCCESS", err)
 	}
@@ -260,6 +268,84 @@ func TestLockWaitTimeout(t *testing.T) {
 	if err := CursorInsertRow(cur1, tpl1); err != DB_SUCCESS {
 		t.Fatalf("CursorInsertRow trx1: %v", err)
 	}
+	if err := TrxCommit(trx1); err != DB_SUCCESS {
+		t.Fatalf("TrxCommit trx1: %v", err)
+	}
+
+	trx2 := TrxBegin(IB_TRX_REPEATABLE_READ)
+	var cur2 *Cursor
+	if err := CursorOpenTable(tableName, trx2, &cur2); err != DB_SUCCESS {
+		t.Fatalf("CursorOpenTable trx2: %v", err)
+	}
+	oldTpl := ClustSearchTupleCreate(cur2)
+	if oldTpl == nil {
+		t.Fatalf("ClustSearchTupleCreate old returned nil")
+	}
+	if err := TupleWriteU32(oldTpl, 0, 1); err != DB_SUCCESS {
+		t.Fatalf("TupleWriteU32 old: %v", err)
+	}
+	newTpl := ClustSearchTupleCreate(cur2)
+	if newTpl == nil {
+		t.Fatalf("ClustSearchTupleCreate new returned nil")
+	}
+	if err := TupleWriteU32(newTpl, 0, 1); err != DB_SUCCESS {
+		t.Fatalf("TupleWriteU32 new: %v", err)
+	}
+	if err := CursorUpdateRow(cur2, oldTpl, newTpl); err != DB_SUCCESS {
+		t.Fatalf("CursorUpdateRow trx2: %v", err)
+	}
+
+	trx3 := TrxBegin(IB_TRX_REPEATABLE_READ)
+	var cur3 *Cursor
+	if err := CursorOpenTable(tableName, trx3, &cur3); err != DB_SUCCESS {
+		t.Fatalf("CursorOpenTable trx3: %v", err)
+	}
+	oldTpl2 := ClustSearchTupleCreate(cur3)
+	if oldTpl2 == nil {
+		t.Fatalf("ClustSearchTupleCreate old2 returned nil")
+	}
+	if err := TupleWriteU32(oldTpl2, 0, 1); err != DB_SUCCESS {
+		t.Fatalf("TupleWriteU32 old2: %v", err)
+	}
+	newTpl2 := ClustSearchTupleCreate(cur3)
+	if newTpl2 == nil {
+		t.Fatalf("ClustSearchTupleCreate new2 returned nil")
+	}
+	if err := TupleWriteU32(newTpl2, 0, 1); err != DB_SUCCESS {
+		t.Fatalf("TupleWriteU32 new2: %v", err)
+	}
+	if err := CursorUpdateRow(cur3, oldTpl2, newTpl2); err != DB_LOCK_WAIT_TIMEOUT {
+		t.Fatalf("CursorUpdateRow trx3=%v, want DB_LOCK_WAIT_TIMEOUT", err)
+	}
+	_ = TrxRollback(trx2)
+	_ = TrxRollback(trx3)
+}
+
+func TestGapLockPreventsInsert(t *testing.T) {
+	tableName := setupLockTable(t, "lock_gap_db", 0)
+	defer func() { _ = Shutdown(ShutdownNormal) }()
+
+	trx1 := TrxBegin(IB_TRX_REPEATABLE_READ)
+	var cur1 *Cursor
+	if err := CursorOpenTable(tableName, trx1, &cur1); err != DB_SUCCESS {
+		t.Fatalf("CursorOpenTable trx1: %v", err)
+	}
+	if err := CursorSetLockMode(cur1, LockIX); err != DB_SUCCESS {
+		t.Fatalf("CursorSetLockMode: %v", err)
+	}
+	search := ClustSearchTupleCreate(cur1)
+	if search == nil {
+		t.Fatalf("ClustSearchTupleCreate search returned nil")
+	}
+	if err := TupleWriteU32(search, 0, 2); err != DB_SUCCESS {
+		t.Fatalf("TupleWriteU32 search: %v", err)
+	}
+	if err := CursorSetMatchMode(cur1, IB_EXACT_MATCH); err != DB_SUCCESS {
+		t.Fatalf("CursorSetMatchMode: %v", err)
+	}
+	if err := CursorMoveTo(cur1, search, CursorGE, nil); err != DB_RECORD_NOT_FOUND {
+		t.Fatalf("CursorMoveTo err=%v, want DB_RECORD_NOT_FOUND", err)
+	}
 
 	trx2 := TrxBegin(IB_TRX_REPEATABLE_READ)
 	var cur2 *Cursor
@@ -270,7 +356,7 @@ func TestLockWaitTimeout(t *testing.T) {
 	if tpl2 == nil {
 		t.Fatalf("ClustReadTupleCreate trx2 returned nil")
 	}
-	if err := TupleWriteU32(tpl2, 0, 1); err != DB_SUCCESS {
+	if err := TupleWriteU32(tpl2, 0, 2); err != DB_SUCCESS {
 		t.Fatalf("TupleWriteU32 trx2: %v", err)
 	}
 	if err := CursorInsertRow(cur2, tpl2); err != DB_LOCK_WAIT_TIMEOUT {

@@ -90,6 +90,37 @@ func TestLockRecTimeout(t *testing.T) {
 	}
 }
 
+func TestInsertIntentionCompatible(t *testing.T) {
+	sys := NewLockSys()
+	trx1 := &trx.Trx{}
+	trx2 := &trx.Trx{}
+	rec := RecordKey{Table: "t1", PageNo: 1, HeapNo: 10}
+
+	if _, status := sys.LockRecWithFlags(trx1, rec, ModeX, FlagInsertIntention); status != LockGranted {
+		t.Fatalf("expected first insert intention granted")
+	}
+	if _, status := sys.LockRecWithFlags(trx2, rec, ModeX, FlagInsertIntention); status != LockGranted {
+		t.Fatalf("expected second insert intention granted")
+	}
+}
+
+func TestGapBlocksInsertIntention(t *testing.T) {
+	sys := NewLockSys()
+	prev := waitTimeout()
+	SetWaitTimeout(50 * time.Millisecond)
+	defer SetWaitTimeout(prev)
+	trx1 := &trx.Trx{}
+	trx2 := &trx.Trx{}
+	rec := RecordKey{Table: "t1", PageNo: 1, HeapNo: 10}
+
+	if _, status := sys.LockRecWithFlags(trx1, rec, ModeS, FlagGap); status != LockGranted {
+		t.Fatalf("expected gap lock granted")
+	}
+	if _, status := sys.LockRecWithFlags(trx2, rec, ModeX, FlagInsertIntention); status != LockWaitTimeout {
+		t.Fatalf("expected insert intention to time out, got %v", status)
+	}
+}
+
 func waitStatus(t *testing.T, ch <-chan Status, timeout time.Duration) Status {
 	t.Helper()
 	select {

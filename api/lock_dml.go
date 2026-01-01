@@ -20,7 +20,7 @@ func lockTableForDML(crsr *Cursor) ErrCode {
 	return lockStatusToErr(status)
 }
 
-func lockRecordForDML(crsr *Cursor, tpl *data.Tuple, mode lock.Mode) ErrCode {
+func lockRecordForDML(crsr *Cursor, tpl *data.Tuple, mode lock.Mode, flags lock.Flags) ErrCode {
 	if crsr == nil || crsr.Table == nil {
 		return DB_ERROR
 	}
@@ -28,7 +28,7 @@ func lockRecordForDML(crsr *Cursor, tpl *data.Tuple, mode lock.Mode) ErrCode {
 		return DB_SUCCESS
 	}
 	key := lockRecordKey(crsr.Table, tpl)
-	_, status := lock.LockRec(crsr.Trx, key, mode)
+	_, status := lock.LockRecWithFlags(crsr.Trx, key, mode, flags)
 	return lockStatusToErr(status)
 }
 
@@ -55,7 +55,6 @@ func tableLockName(table *Table) string {
 }
 
 func lockRecordKey(table *Table, tpl *data.Tuple) lock.RecordKey {
-	name := tableLockName(table)
 	var key []byte
 	if table != nil && table.Store != nil {
 		key = primaryKeyBytes(table.Store, tpl)
@@ -65,6 +64,11 @@ func lockRecordKey(table *Table, tpl *data.Tuple) lock.RecordKey {
 			key = encoded
 		}
 	}
+	return lockRecordKeyFromBytes(table, key)
+}
+
+func lockRecordKeyFromBytes(table *Table, key []byte) lock.RecordKey {
+	name := tableLockName(table)
 	hasher := fnv.New32a()
 	if len(key) > 0 {
 		_, _ = hasher.Write(key)
@@ -73,4 +77,16 @@ func lockRecordKey(table *Table, tpl *data.Tuple) lock.RecordKey {
 	}
 	sum := hasher.Sum32()
 	return lock.RecordKey{Table: name, PageNo: 0, HeapNo: uint16(sum)}
+}
+
+func lockGapForKey(crsr *Cursor, key []byte) ErrCode {
+	if crsr == nil || crsr.Table == nil || crsr.Trx == nil {
+		return DB_SUCCESS
+	}
+	if crsr.LockMode != LockIX {
+		return DB_SUCCESS
+	}
+	lockKey := lockRecordKeyFromBytes(crsr.Table, key)
+	_, status := lock.LockRecWithFlags(crsr.Trx, lockKey, lock.ModeS, lock.FlagGap)
+	return lockStatusToErr(status)
 }

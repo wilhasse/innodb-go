@@ -5,4 +5,7 @@ type Flags uint32
 
 const (
 	FlagWait Flags = 1 << iota
+	FlagGap
+	FlagNextKey
+	FlagInsertIntention
 )

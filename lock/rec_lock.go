@@ -8,11 +8,16 @@ import (
 
 // LockRec acquires a record lock in the global lock system.
 func LockRec(tr *trx.Trx, record RecordKey, mode Mode) (*Lock, Status) {
+	return LockRecWithFlags(tr, record, mode, 0)
+}
+
+// LockRecWithFlags acquires a record lock with additional flags.
+func LockRecWithFlags(tr *trx.Trx, record RecordKey, mode Mode, flags Flags) (*Lock, Status) {
 	sys := Sys()
 	if sys == nil {
 		return nil, LockGranted
 	}
-	return sys.LockRec(tr, record, mode)
+	return sys.LockRecWithFlags(tr, record, mode, flags)
 }
 
 // UnlockRec releases record locks in the global lock system.
@@ -26,6 +31,11 @@ func UnlockRec(tr *trx.Trx, record RecordKey) {
 
 // LockRec acquires a record lock in a lock system.
 func (sys *LockSys) LockRec(tr *trx.Trx, record RecordKey, mode Mode) (*Lock, Status) {
+	return sys.LockRecWithFlags(tr, record, mode, 0)
+}
+
+// LockRecWithFlags acquires a record lock with additional flags.
+func (sys *LockSys) LockRecWithFlags(tr *trx.Trx, record RecordKey, mode Mode, flags Flags) (*Lock, Status) {
 	if sys == nil {
 		return nil, LockGranted
 	}
@@ -44,10 +54,11 @@ func (sys *LockSys) LockRec(tr *trx.Trx, record RecordKey, mode Mode) (*Lock, St
 			queue = &Queue{}
 			sys.recordHash[pageKey] = queue
 		}
-		ownGranted, ownWaiting, blockers := sys.recordBlockers(queue, tr, heapNo, mode)
+		ownGranted, ownWaiting, blockers := sys.recordBlockers(queue, tr, heapNo, mode, flags)
 		if len(blockers) == 0 {
 			if ownWaiting != nil {
 				ownWaiting.Flags &^= FlagWait
+				ownWaiting.Flags = flags
 				ownWaiting.SetBit(heapNo)
 				if ModeStrongerOrEq(ownWaiting.Mode, mode) {
 					sys.clearWaitEdges(tr)
@@ -60,6 +71,7 @@ func (sys *LockSys) LockRec(tr *trx.Trx, record RecordKey, mode Mode) (*Lock, St
 				return ownWaiting, LockGranted
 			}
 			if ownGranted != nil {
+				ownGranted.Flags = flags
 				ownGranted.SetBit(heapNo)
 				if ModeStrongerOrEq(ownGranted.Mode, mode) {
 					sys.clearWaitEdges(tr)
@@ -71,7 +83,7 @@ func (sys *LockSys) LockRec(tr *trx.Trx, record RecordKey, mode Mode) (*Lock, St
 				sys.mu.Unlock()
 				return ownGranted, LockGranted
 			}
-			lock := &Lock{Type: LockTypeRec, Mode: mode, Trx: tr, Rec: pageKey}
+			lock := &Lock{Type: LockTypeRec, Mode: mode, Trx: tr, Rec: pageKey, Flags: flags}
 			lock.SetBit(heapNo)
 			queue.Append(lock)
 			sys.addLock(lock)
@@ -101,14 +113,14 @@ func (sys *LockSys) LockRec(tr *trx.Trx, record RecordKey, mode Mode) (*Lock, St
 				Mode:   mode,
 				Trx:    tr,
 				Rec:    pageKey,
-				Flags:  FlagWait,
+				Flags:  FlagWait | flags,
 				WaitCh: make(chan struct{}, 1),
 			}
 			waiter.SetBit(heapNo)
 			queue.Append(waiter)
 			sys.addLock(waiter)
 		} else {
-			waiter.Flags |= FlagWait
+			waiter.Flags = FlagWait | flags
 			waiter.Mode = mode
 			if waiter.WaitCh == nil {
 				waiter.WaitCh = make(chan struct{}, 1)
@@ -161,7 +173,7 @@ func (sys *LockSys) UnlockRec(tr *trx.Trx, record RecordKey) {
 	}
 }
 
-func (sys *LockSys) recordBlockers(queue *Queue, tr *trx.Trx, heapNo int, mode Mode) (*Lock, *Lock, []*trx.Trx) {
+func (sys *LockSys) recordBlockers(queue *Queue, tr *trx.Trx, heapNo int, mode Mode, flags Flags) (*Lock, *Lock, []*trx.Trx) {
 	var ownGranted *Lock
 	var ownWaiting *Lock
 	var blockers []*trx.Trx
@@ -185,7 +197,7 @@ func (sys *LockSys) recordBlockers(queue *Queue, tr *trx.Trx, heapNo int, mode M
 		if !lock.HasBit(heapNo) {
 			continue
 		}
-		if !ModeCompatible(mode, lock.Mode) && lock.Trx != nil {
+		if lockConflict(mode, flags, lock) && lock.Trx != nil {
 			blockers = append(blockers, lock.Trx)
 		}
 	}

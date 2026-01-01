@@ -141,7 +141,7 @@ func CursorInsertRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 	if err := lockTableForDML(crsr); err != DB_SUCCESS {
 		return err
 	}
-	if err := lockRecordForDML(crsr, encoded, lock.ModeX); err != DB_SUCCESS {
+	if err := lockRecordForDML(crsr, encoded, lock.ModeX, lock.FlagInsertIntention); err != DB_SUCCESS {
 		return err
 	}
 	if err := crsr.Table.Store.Insert(encoded); err != nil {
@@ -569,11 +569,11 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 			if exactRequired && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
 				return DB_SUCCESS
 			}
-			return DB_RECORD_NOT_FOUND
+			return cursorMoveNotFound(crsr, searchKey)
 		}
 		if mode == CursorG && exact && bytes.Equal(cur.Key(), searchKey) {
 			if !cur.Next() {
-				return DB_RECORD_NOT_FOUND
+				return cursorMoveNotFound(crsr, searchKey)
 			}
 		}
 		crsr.pageCur = cur
@@ -596,14 +596,14 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 			case CursorGE:
 				if cmp < 0 {
 					if !crsr.pageCur.Next() {
-						return DB_RECORD_NOT_FOUND
+						return cursorMoveNotFound(crsr, searchKey)
 					}
 					continue
 				}
 			case CursorG:
 				if cmp <= 0 {
 					if !crsr.pageCur.Next() {
-						return DB_RECORD_NOT_FOUND
+						return cursorMoveNotFound(crsr, searchKey)
 					}
 					continue
 				}
@@ -612,13 +612,13 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 				if crsr.Index != nil {
 					if !tupleHasIndexPrefix(rowTuple, tpl, cols, prefixes, keyFields) {
 						if !crsr.pageCur.Next() {
-							return DB_RECORD_NOT_FOUND
+							return cursorMoveNotFound(crsr, searchKey)
 						}
 						continue
 					}
 				} else if !tupleHasPrefix(rowTuple, tpl, keyFields) {
 					if !crsr.pageCur.Next() {
-						return DB_RECORD_NOT_FOUND
+						return cursorMoveNotFound(crsr, searchKey)
 					}
 					continue
 				}
@@ -626,7 +626,7 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 			if exactRequired {
 				if cmp != 0 || (pkFields > 0 && keyFields != pkFields) {
 					if !crsr.pageCur.Next() {
-						return DB_RECORD_NOT_FOUND
+						return cursorMoveNotFound(crsr, searchKey)
 					}
 					continue
 				}
@@ -644,7 +644,7 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 		if exactRequired && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
 			return DB_SUCCESS
 		}
-		return DB_RECORD_NOT_FOUND
+		return cursorMoveNotFound(crsr, searchKey)
 	}
 	if crsr.Tree == nil {
 		return DB_ERROR
@@ -657,7 +657,7 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 		if exactRequired && crsr.Index == nil && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
 			return DB_SUCCESS
 		}
-		return DB_RECORD_NOT_FOUND
+		return cursorMoveNotFound(crsr, searchKey)
 	}
 	for pcur.Cur.Valid() {
 		rowID, ok := row.DecodeRowID(pcur.Cur.Value())
@@ -684,14 +684,14 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 		case CursorGE:
 			if cmp < 0 {
 				if !pcur.Cur.Next() {
-					return DB_RECORD_NOT_FOUND
+					return cursorMoveNotFound(crsr, searchKey)
 				}
 				continue
 			}
 		case CursorG:
 			if cmp <= 0 {
 				if !pcur.Cur.Next() {
-					return DB_RECORD_NOT_FOUND
+					return cursorMoveNotFound(crsr, searchKey)
 				}
 				continue
 			}
@@ -700,13 +700,13 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 			if crsr.Index != nil {
 				if !tupleHasIndexPrefix(rowTuple, tpl, cols, prefixes, keyFields) {
 					if !pcur.Cur.Next() {
-						return DB_RECORD_NOT_FOUND
+						return cursorMoveNotFound(crsr, searchKey)
 					}
 					continue
 				}
 			} else if !tupleHasPrefix(rowTuple, tpl, keyFields) {
 				if !pcur.Cur.Next() {
-					return DB_RECORD_NOT_FOUND
+					return cursorMoveNotFound(crsr, searchKey)
 				}
 				continue
 			}
@@ -714,7 +714,7 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 		if exactRequired {
 			if cmp != 0 || (pkFields > 0 && keyFields != pkFields) {
 				if !pcur.Cur.Next() {
-					return DB_RECORD_NOT_FOUND
+					return cursorMoveNotFound(crsr, searchKey)
 				}
 				continue
 			}
@@ -732,6 +732,13 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 	}
 	if exactRequired && crsr.Index == nil && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
 		return DB_SUCCESS
+	}
+	return cursorMoveNotFound(crsr, searchKey)
+}
+
+func cursorMoveNotFound(crsr *Cursor, searchKey []byte) ErrCode {
+	if err := lockGapForKey(crsr, searchKey); err != DB_SUCCESS {
+		return err
 	}
 	return DB_RECORD_NOT_FOUND
 }

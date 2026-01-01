@@ -75,7 +75,7 @@ func CursorUpdateRow(crsr *Cursor, oldTpl, newTpl *data.Tuple) ErrCode {
 	if err := lockTableForDML(crsr); err != DB_SUCCESS {
 		return err
 	}
-	if err := lockRecordForDML(crsr, target, lock.ModeX); err != DB_SUCCESS {
+	if err := lockRecordForDML(crsr, target, lock.ModeX, lock.FlagNextKey); err != DB_SUCCESS {
 		return err
 	}
 	oldKey := primaryKeyBytes(store, target)
@@ -191,7 +191,7 @@ func CursorDeleteRow(crsr *Cursor) ErrCode {
 	if err := lockTableForDML(crsr); err != DB_SUCCESS {
 		return err
 	}
-	if err := lockRecordForDML(crsr, row, lock.ModeX); err != DB_SUCCESS {
+	if err := lockRecordForDML(crsr, row, lock.ModeX, lock.FlagNextKey); err != DB_SUCCESS {
 		return err
 	}
 	if crsr.treeCur != nil && crsr.treeCur.Valid() {

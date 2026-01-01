@@ -54,15 +54,21 @@ func TestRollbackReleasesLocks(t *testing.T) {
 	if err := CursorOpenTable(tableName, trx1, &cur1); err != DB_SUCCESS {
 		t.Fatalf("CursorOpenTable trx1: %v", err)
 	}
-	tpl1 := ClustReadTupleCreate(cur1)
-	if tpl1 == nil {
-		t.Fatalf("ClustReadTupleCreate trx1 returned nil")
+	if err := CursorSetLockMode(cur1, LockIX); err != DB_SUCCESS {
+		t.Fatalf("CursorSetLockMode: %v", err)
 	}
-	if err := TupleWriteU32(tpl1, 0, 1); err != DB_SUCCESS {
-		t.Fatalf("TupleWriteU32 trx1: %v", err)
+	search := ClustSearchTupleCreate(cur1)
+	if search == nil {
+		t.Fatalf("ClustSearchTupleCreate search returned nil")
 	}
-	if err := CursorInsertRow(cur1, tpl1); err != DB_SUCCESS {
-		t.Fatalf("CursorInsertRow trx1: %v", err)
+	if err := TupleWriteU32(search, 0, 1); err != DB_SUCCESS {
+		t.Fatalf("TupleWriteU32 search: %v", err)
+	}
+	if err := CursorSetMatchMode(cur1, IB_EXACT_MATCH); err != DB_SUCCESS {
+		t.Fatalf("CursorSetMatchMode: %v", err)
+	}
+	if err := CursorMoveTo(cur1, search, CursorGE, nil); err != DB_RECORD_NOT_FOUND {
+		t.Fatalf("CursorMoveTo err=%v, want DB_RECORD_NOT_FOUND", err)
 	}
 
 	trx2 := TrxBegin(IB_TRX_REPEATABLE_READ)
