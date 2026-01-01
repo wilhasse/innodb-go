@@ -123,6 +123,7 @@ func CursorInsertRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 		}
 		return DB_ERROR
 	}
+	recordUndoInsert(crsr, encoded)
 	return DB_SUCCESS
 }
 

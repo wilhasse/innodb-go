@@ -45,6 +45,10 @@ func TrxCommit(trx *Trx) {
 	}
 	trx.State = TrxCommitted
 	trx.UndoLog = nil
+	trx.UndoRecords = nil
+	trx.UndoNo = 0
+	trx.InsertUndo = nil
+	trx.UpdateUndo = nil
 	trx.Savepoints = nil
 	TrxSysRemoveActive(trx)
 }
@@ -55,6 +59,10 @@ func TrxRollback(trx *Trx) {
 		return
 	}
 	Rollback(trx)
+	trx.UndoRecords = nil
+	trx.UndoNo = 0
+	trx.InsertUndo = nil
+	trx.UpdateUndo = nil
 	trx.State = TrxRolledBack
 	TrxSysRemoveActive(trx)
 }

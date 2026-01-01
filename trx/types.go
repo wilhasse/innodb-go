@@ -21,6 +21,10 @@ type Trx struct {
 	State      TrxState
 	StartTime  time.Time
 	UndoLog    []UndoAction
+	UndoRecords []UndoRecord
+	UndoNo     uint64
+	InsertUndo *UndoLog
+	UpdateUndo *UndoLog
 	Savepoints []Savepoint
 }
 
