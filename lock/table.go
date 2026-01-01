@@ -61,6 +61,7 @@ func (sys *LockSys) LockTable(tr *trx.Trx, table string, mode Mode) (*Lock, Stat
 	}
 
 	if own != nil {
+		own.Flags &^= FlagWait
 		if ModeStrongerOrEq(own.Mode, mode) {
 			sys.clearWaitEdges(tr)
 			return own, LockGranted

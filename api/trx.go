@@ -1,6 +1,9 @@
 package api
 
-import "github.com/wilhasse/innodb-go/trx"
+import (
+	"github.com/wilhasse/innodb-go/lock"
+	"github.com/wilhasse/innodb-go/trx"
+)
 
 // TrxIsolation mirrors ib_trx_level_t.
 type TrxIsolation int
@@ -33,6 +36,7 @@ func TrxCommit(ibTrx *trx.Trx) ErrCode {
 		return DB_ERROR
 	}
 	trx.TrxCommit(ibTrx)
+	lock.ReleaseAll(ibTrx)
 	clearSchemaLock(ibTrx)
 	purgeIfNeeded()
 	return DB_SUCCESS
@@ -45,6 +49,7 @@ func TrxRollback(ibTrx *trx.Trx) ErrCode {
 	}
 	undoErr := rollbackUndoRecords(ibTrx)
 	trx.TrxRollback(ibTrx)
+	lock.ReleaseAll(ibTrx)
 	clearSchemaLock(ibTrx)
 	purgeIfNeeded()
 	if undoErr != nil {
@@ -76,6 +81,7 @@ func TrxRelease(ibTrx *trx.Trx) ErrCode {
 		return DB_ERROR
 	}
 	clearSchemaLock(ibTrx)
+	lock.ReleaseAll(ibTrx)
 	trx.TrxRelease(ibTrx)
 	return DB_SUCCESS
 }

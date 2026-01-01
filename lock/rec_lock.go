@@ -72,6 +72,7 @@ func (sys *LockSys) LockRec(tr *trx.Trx, record RecordKey, mode Mode) (*Lock, St
 	}
 
 	if own != nil {
+		own.Flags &^= FlagWait
 		own.SetBit(heapNo)
 		if ModeStrongerOrEq(own.Mode, mode) {
 			sys.clearWaitEdges(tr)
