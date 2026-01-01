@@ -5,7 +5,13 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+)
+
+var (
+	testDataMu   sync.Mutex
+	testDataDirs []string
 )
 
 func resetAPIState() {
@@ -15,6 +21,29 @@ func resetAPIState() {
 	clientComparator = DefaultCompare
 	Logger = DefaultLogger
 	LogStream = os.Stderr
+	setTestDataHomeDir()
+}
+
+func setTestDataHomeDir() {
+	dir, err := os.MkdirTemp("", "innodb-go-api-")
+	if err != nil {
+		return
+	}
+	_ = os.Setenv("INNODB_DATA_HOME_DIR", dir)
+	testDataMu.Lock()
+	testDataDirs = append(testDataDirs, dir)
+	testDataMu.Unlock()
+}
+
+func TestMain(m *testing.M) {
+	code := m.Run()
+	testDataMu.Lock()
+	dirs := append([]string(nil), testDataDirs...)
+	testDataMu.Unlock()
+	for _, dir := range dirs {
+		_ = os.RemoveAll(dir)
+	}
+	os.Exit(code)
 }
 
 func TestAPIVersion(t *testing.T) {
