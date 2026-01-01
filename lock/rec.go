@@ -29,6 +29,19 @@ func (lock *Lock) HasBit(heapNo int) bool {
 	return lock.Bits[heapNo]
 }
 
+// HasAnyBit reports whether any heap bit is set.
+func (lock *Lock) HasAnyBit() bool {
+	if lock == nil {
+		return false
+	}
+	for _, set := range lock.Bits {
+		if set {
+			return true
+		}
+	}
+	return false
+}
+
 // RecLockFirst returns the first lock in the queue that has the heap bit set.
 func RecLockFirst(queue *Queue, heapNo int) *Lock {
 	if queue == nil || heapNo < 0 {
