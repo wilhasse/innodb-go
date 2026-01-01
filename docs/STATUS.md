@@ -17,7 +17,7 @@ rough indicator and are taken from `wc -l` over each Go package directory.
 | lock (locking) | ~5,700 | 520 | Partial | Table/record locks with wait graph + deadlock detection; basic gap/next-key/insert-intention flags and timeouts. |
 | trx (transactions) | ~4,500 | 1,273 | Partial | Undo records + rollback/savepoints; read view assignment; no lock-based isolation. |
 | row (row ops) | ~7,000 | 1,900 | Partial | Basic row ops + BTR integration; MVCC version chains; row-store log replay on attach. |
-| read (read views) | ~500 | 194 | Partial | Read view snapshots + visibility checks in cursors. |
+| read (read views) | ~500 | 194 | Partial | Read view snapshots + visibility checks in cursors (incl. secondary index reads). |
 | rem (record mgr) | ~2,000 | 378 | Partial | Basic record format helpers only. |
 | rec | ~2,000 | 620 | Partial | Record encoding/decoding, headers, and comparison helpers. |
 | undo | ~2,000 | 0 | Partial | In-memory undo records + payloads live in trx/api (no separate package). |
@@ -68,7 +68,7 @@ single-threaded B-tree with minimal bookkeeping. Each operation skips:
 2) Redo logging
 3) Undo logging
 4) Buffer pool LRU/flush work
-5) MVCC read view checks
+5) MVCC read view checks (beyond cursor-level visibility)
 6) Transaction bookkeeping
 
 The current API path now writes .ibd files, but it is still far from the

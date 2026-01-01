@@ -215,7 +215,9 @@ func CursorFirst(crsr *Cursor) ErrCode {
 	if crsr.treeCur == nil || !crsr.treeCur.Valid() {
 		return DB_RECORD_NOT_FOUND
 	}
-	crsr.lastKey = crsr.treeCur.Key()
+	if !advanceTreeCursorVisible(crsr) {
+		return DB_RECORD_NOT_FOUND
+	}
 	return DB_SUCCESS
 }
 
@@ -266,8 +268,9 @@ func CursorNext(crsr *Cursor) ErrCode {
 			crsr.treeCur = nil
 			return DB_END_OF_INDEX
 		}
-		crsr.treeCur = pcur.Cur.Cursor
-		crsr.lastKey = pcur.Cur.Key()
+		if !advanceTreeCursorVisible(crsr) {
+			return DB_END_OF_INDEX
+		}
 		return DB_SUCCESS
 	}
 	if len(crsr.lastKey) == 0 {
@@ -286,7 +289,9 @@ func CursorNext(crsr *Cursor) ErrCode {
 		return DB_END_OF_INDEX
 	}
 	crsr.treeCur = pcur.Cur.Cursor
-	crsr.lastKey = pcur.Cur.Key()
+	if !advanceTreeCursorVisible(crsr) {
+		return DB_END_OF_INDEX
+	}
 	return DB_SUCCESS
 }
 
@@ -313,17 +318,6 @@ func CursorReadRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 	if crsr.treeCur == nil || !crsr.treeCur.Valid() {
 		return DB_RECORD_NOT_FOUND
 	}
-	if crsr.Index == nil && crsr.Trx != nil && crsr.Trx.ReadView != nil && crsr.Table.Store != nil {
-		if key := crsr.treeCur.Key(); len(key) > 0 {
-			if visible, ok := crsr.Table.Store.VersionForView(key, crsr.Trx.ReadView); ok {
-				if visible == nil {
-					return DB_RECORD_NOT_FOUND
-				}
-				copyTuple(tpl, visible)
-				return DB_SUCCESS
-			}
-		}
-	}
 	value := crsr.treeCur.Value()
 	if len(value) == 0 {
 		return DB_RECORD_NOT_FOUND
@@ -333,11 +327,19 @@ func CursorReadRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 		recBytes = value[8:]
 	}
 	if len(recBytes) == 0 {
-		row, ok := cursorRow(crsr)
+		rowID, rowTuple, ok := cursorRow(crsr)
+		if !ok || rowTuple == nil {
+			return DB_RECORD_NOT_FOUND
+		}
+		recordKey := []byte(nil)
+		if crsr.Index == nil {
+			recordKey = crsr.treeCur.Key()
+		}
+		visible, ok := cursorVisibleTuple(crsr, rowID, rowTuple, recordKey)
 		if !ok {
 			return DB_RECORD_NOT_FOUND
 		}
-		copyTuple(tpl, row)
+		copyTuple(tpl, visible)
 		return DB_SUCCESS
 	}
 	nFields := len(tpl.Fields)
@@ -346,52 +348,69 @@ func CursorReadRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 	}
 	decoded, err := rec.DecodeVar(recBytes, nFields, 0)
 	if err != nil {
-		row, ok := cursorRow(crsr)
-		if !ok {
+		rowID, rowTuple, ok := cursorRow(crsr)
+		if !ok || rowTuple == nil {
 			return DB_ERROR
 		}
-		copyTuple(tpl, row)
+		recordKey := []byte(nil)
+		if crsr.Index == nil {
+			recordKey = crsr.treeCur.Key()
+		}
+		visible, ok := cursorVisibleTuple(crsr, rowID, rowTuple, recordKey)
+		if !ok {
+			return DB_RECORD_NOT_FOUND
+		}
+		copyTuple(tpl, visible)
 		return DB_SUCCESS
 	}
-	copyTuple(tpl, decoded)
+	rowID, _ := row.DecodeRowID(value)
+	recordKey := []byte(nil)
+	if crsr.Index == nil {
+		recordKey = crsr.treeCur.Key()
+	}
+	visible, ok := cursorVisibleTuple(crsr, rowID, decoded, recordKey)
+	if !ok {
+		return DB_RECORD_NOT_FOUND
+	}
+	copyTuple(tpl, visible)
 	return DB_SUCCESS
 }
 
-func cursorRow(crsr *Cursor) (*data.Tuple, bool) {
+func cursorRow(crsr *Cursor) (uint64, *data.Tuple, bool) {
 	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil {
-		return nil, false
+		return 0, nil, false
 	}
 	if crsr.usePageTree() && crsr.pageCur != nil {
 		if crsr.pageCur == nil || !crsr.pageCur.Valid() {
-			return nil, false
+			return 0, nil, false
 		}
 		value := crsr.pageCur.Value()
 		rowID, ok := row.DecodeRowID(value)
 		if !ok {
-			return nil, false
+			return 0, nil, false
 		}
 		rowTuple := crsr.Table.Store.RowByID(rowID)
 		if rowTuple != nil {
-			return rowTuple, true
+			return rowID, rowTuple, true
 		}
 		decoded, ok := decodeCursorTuple(crsr, value)
-		return decoded, ok
+		return rowID, decoded, ok
 	}
 	if crsr.treeCur == nil && crsr.pcur != nil && crsr.pcur.Cur != nil && crsr.pcur.Cur.Valid() {
 		crsr.treeCur = crsr.pcur.Cur.Cursor
 	}
 	if crsr.treeCur == nil || !crsr.treeCur.Valid() {
-		return nil, false
+		return 0, nil, false
 	}
 	rowID, ok := row.DecodeRowID(crsr.treeCur.Value())
 	if !ok {
-		return nil, false
+		return 0, nil, false
 	}
 	rowTuple := crsr.Table.Store.RowByID(rowID)
 	if rowTuple == nil {
-		return nil, false
+		return rowID, nil, false
 	}
-	return rowTuple, true
+	return rowID, rowTuple, true
 }
 
 func cursorPageVisibleTuple(crsr *Cursor) (*data.Tuple, bool) {
@@ -399,18 +418,11 @@ func cursorPageVisibleTuple(crsr *Cursor) (*data.Tuple, bool) {
 	if !ok || tuple == nil {
 		return nil, false
 	}
-	if crsr.Index == nil && crsr.Trx != nil && crsr.Trx.ReadView != nil {
-		key := cursorPageKey(crsr, tuple, rowID, crsr.pageCur.Key())
-		if len(key) > 0 {
-			if visible, ok := crsr.Table.Store.VersionForView(key, crsr.Trx.ReadView); ok {
-				if visible == nil {
-					return nil, false
-				}
-				return visible, true
-			}
-		}
+	recordKey := []byte(nil)
+	if crsr != nil && crsr.Index == nil && crsr.pageCur != nil {
+		recordKey = crsr.pageCur.Key()
 	}
-	return tuple, true
+	return cursorVisibleTuple(crsr, rowID, tuple, recordKey)
 }
 
 func cursorPageTuple(crsr *Cursor) (uint64, *data.Tuple, bool) {
@@ -443,6 +455,36 @@ func advancePageCursorVisible(crsr *Cursor) bool {
 	return false
 }
 
+func advanceTreeCursorVisible(crsr *Cursor) bool {
+	if crsr == nil {
+		return false
+	}
+	pcur := ensurePcur(crsr)
+	if pcur == nil || pcur.Cur == nil {
+		return false
+	}
+	for pcur.Cur.Valid() {
+		crsr.treeCur = pcur.Cur.Cursor
+		rowID, tuple, ok := cursorRow(crsr)
+		if ok && tuple != nil {
+			recordKey := []byte(nil)
+			if crsr.Index == nil && crsr.treeCur != nil {
+				recordKey = crsr.treeCur.Key()
+			}
+			if _, ok := cursorVisibleTuple(crsr, rowID, tuple, recordKey); ok {
+				crsr.lastKey = crsr.treeCur.Key()
+				return true
+			}
+		}
+		if !pcur.Cur.Next() {
+			crsr.treeCur = nil
+			return false
+		}
+	}
+	crsr.treeCur = nil
+	return false
+}
+
 func cursorPageKey(crsr *Cursor, tuple *data.Tuple, rowID uint64, recordKey []byte) []byte {
 	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil {
 		return recordKey
@@ -465,6 +507,24 @@ func cursorPageKey(crsr *Cursor, tuple *data.Tuple, rowID uint64, recordKey []by
 		return store.KeyForRowID(tuple, rowID)
 	}
 	return recordKey
+}
+
+func cursorVisibleTuple(crsr *Cursor, rowID uint64, tuple *data.Tuple, recordKey []byte) (*data.Tuple, bool) {
+	if crsr == nil || crsr.Trx == nil || crsr.Trx.ReadView == nil || crsr.Table == nil || crsr.Table.Store == nil {
+		return tuple, tuple != nil
+	}
+	key := cursorPageKey(crsr, tuple, rowID, recordKey)
+	if len(key) == 0 {
+		return tuple, tuple != nil
+	}
+	visible, ok := crsr.Table.Store.VersionForView(key, crsr.Trx.ReadView)
+	if ok {
+		if visible == nil {
+			return nil, false
+		}
+		return visible, true
+	}
+	return tuple, tuple != nil
 }
 
 func decodeCursorValue(crsr *Cursor, value []byte) (uint64, *data.Tuple, bool) {

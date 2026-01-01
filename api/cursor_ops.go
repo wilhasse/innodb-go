@@ -111,7 +111,7 @@ func findRowForUpdate(crsr *Cursor, tpl *data.Tuple) *data.Tuple {
 		return nil
 	}
 	if crsr.Index != nil {
-		if row, ok := cursorRow(crsr); ok {
+		if _, row, ok := cursorRow(crsr); ok {
 			return row
 		}
 	}
@@ -183,7 +183,7 @@ func CursorDeleteRow(crsr *Cursor) ErrCode {
 	}
 	if row == nil {
 		var ok bool
-		row, ok = cursorRow(crsr)
+		_, row, ok = cursorRow(crsr)
 		if !ok {
 			return DB_RECORD_NOT_FOUND
 		}
