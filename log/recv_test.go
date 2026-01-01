@@ -23,12 +23,13 @@ func TestRecvAddAndRecoverPage(t *testing.T) {
 	RecvSysInit(0)
 	RecvAddRecord(1, 2, 3, []byte("x"), 10, 20)
 	RecvAddRecord(1, 2, 4, []byte("y"), 21, 30)
-	page := &Page{SpaceID: 1, PageNo: 2, LSN: 5}
-	if !RecvRecoverPage(page) {
+	page := make([]byte, 64)
+	setPageLSN(page, 5)
+	if !RecvRecoverPage(1, 2, page) {
 		t.Fatalf("expected page to recover")
 	}
-	if page.LSN != 30 {
-		t.Fatalf("expected page LSN to advance to 30, got %d", page.LSN)
+	if got := pageLSN(page); got != 30 {
+		t.Fatalf("expected page LSN to advance to 30, got %d", got)
 	}
 	if RecvSysState.NAddrs != 0 {
 		t.Fatalf("expected hash to be empty after recovery")

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 
+	iblog "github.com/wilhasse/innodb-go/log"
 	ibos "github.com/wilhasse/innodb-go/os"
 	"github.com/wilhasse/innodb-go/ut"
 )
@@ -55,6 +56,7 @@ func SpaceReadPageInto(spaceID, pageNo uint32, buf []byte) error {
 	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
+	iblog.RecvRecoverPage(spaceID, pageNo, buf)
 	return nil
 }
 

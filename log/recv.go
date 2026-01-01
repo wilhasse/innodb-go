@@ -1,6 +1,10 @@
 package log
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/wilhasse/innodb-go/mach"
+)
 
 // RecoveryMode describes recovery behavior.
 type RecoveryMode int
@@ -181,26 +185,26 @@ func RecvAddRecord(spaceID, pageNo uint32, recType byte, data []byte, startLSN, 
 	}
 }
 
-// RecvRecoverPage applies stored records to a page.
-func RecvRecoverPage(page *Page) bool {
+// RecvRecoverPage applies stored records to a page buffer.
+func RecvRecoverPage(spaceID, pageNo uint32, page []byte) bool {
 	if RecvSysState == nil || page == nil {
 		return false
 	}
 	recv := RecvSysState
 	recv.mu.Lock()
 	defer recv.mu.Unlock()
-	key := recvAddrKey{space: page.SpaceID, pageNo: page.PageNo}
+	key := recvAddrKey{space: spaceID, pageNo: pageNo}
 	addr := recv.Hash[key]
 	if addr == nil {
 		return false
 	}
-	maxLSN := page.LSN
+	maxLSN := pageLSN(page)
 	for _, rec := range addr.Records {
 		if rec.EndLSN > maxLSN {
 			maxLSN = rec.EndLSN
 		}
 	}
-	page.LSN = maxLSN
+	setPageLSN(page, maxLSN)
 	delete(recv.Hash, key)
 	if recv.NAddrs > 0 {
 		recv.NAddrs--
@@ -290,10 +294,20 @@ func RecvResetLogs(lsn uint64) {
 	System.entries = nil
 }
 
-// Page is a simplified page representation for recovery.
-type Page struct {
-	SpaceID uint32
-	PageNo  uint32
-	LSN     uint64
-	Data    []byte
+const pageLSNOffset = 16
+
+func pageLSN(page []byte) uint64 {
+	offs := int(pageLSNOffset)
+	if len(page) < offs+8 {
+		return 0
+	}
+	return mach.ReadUll(page[offs:])
+}
+
+func setPageLSN(page []byte, lsn uint64) {
+	offs := int(pageLSNOffset)
+	if len(page) < offs+8 {
+		return
+	}
+	mach.WriteUll(page[offs:], lsn)
 }
