@@ -98,11 +98,21 @@ func SpaceWritePage(spaceID, pageNo uint32, data []byte) error {
 			SpaceEnsureSize(spaceID, uint64(pageNo)+1)
 			return nil
 		}
+		if space.Purpose != SpaceLog {
+			if err := DoublewriteWrite(spaceID, pageNo, data); err != nil {
+				return err
+			}
+		}
 		if err := WritePage(space.File, pageNo, data); err != nil {
 			return err
 		}
 		SpaceEnsureSize(spaceID, uint64(pageNo)+1)
 		return nil
+	}
+	if space.Purpose != SpaceLog {
+		if err := DoublewriteWrite(spaceID, pageNo, data); err != nil {
+			return err
+		}
 	}
 	if err := WritePage(node.File, localPage, data); err != nil {
 		return err

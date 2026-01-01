@@ -96,6 +96,7 @@ func ExportInnoDBStatus() {
 	logFlushes := atomic.LoadUint64(&iblog.NLogFlushes)
 	pendingLogFlushes := atomic.LoadUint64(&iblog.NPendingLogFlushes)
 	pendingSpaceFlushes := atomic.LoadUint64(&fil.NPendingTablespaceFlushes)
+	dblwrPages, dblwrWrites := fil.DoublewriteStats()
 
 	ExportVars.InnodbDataPendingWrites = ut.Ulint(pendingSpaceFlushes)
 	ExportVars.InnodbDataPendingFsyncs = ut.Ulint(pendingSpaceFlushes)
@@ -117,6 +118,8 @@ func ExportInnoDBStatus() {
 
 	ExportVars.InnodbPagesRead = ut.Ulint(reads)
 	ExportVars.InnodbPagesWritten = ut.Ulint(writes)
+	ExportVars.InnodbDblwrPagesWritten = ut.Ulint(dblwrPages)
+	ExportVars.InnodbDblwrWrites = ut.Ulint(dblwrWrites)
 
 	ExportVars.InnodbLogWriteRequests = ut.Ulint(logFlushes)
 	ExportVars.InnodbLogWrites = ut.Ulint(logFlushes)

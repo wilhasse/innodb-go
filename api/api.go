@@ -82,6 +82,18 @@ func Startup(format string) ErrCode {
 	if err := openSystemTablespace(); err != DB_SUCCESS {
 		return err
 	}
+	var dblwr Bool
+	if err := CfgGet("doublewrite", &dblwr); err == DB_SUCCESS {
+		fil.SetDoublewriteEnabled(dblwr == IBTrue)
+		if dblwr == IBTrue {
+			if err := fil.DoublewriteInit(dataHomeDir()); err != nil {
+				return DB_ERROR
+			}
+			if err := fil.DoublewriteRecover(); err != nil {
+				return DB_ERROR
+			}
+		}
+	}
 	dict.SetDataDir(dataHomeDir())
 	dict.DictBootstrap()
 	if err := loadSchemaFromDict(); err != DB_SUCCESS {
@@ -142,6 +154,7 @@ func Shutdown(_ ShutdownFlag) ErrCode {
 	resetSchemaState()
 	_ = buf.FlushAll()
 	log.Shutdown()
+	fil.DoublewriteShutdown()
 	closeSystemTablespace()
 	buf.SetDefaultPools(nil)
 	dict.DictClose()
