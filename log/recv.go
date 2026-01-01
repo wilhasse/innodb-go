@@ -244,9 +244,6 @@ func RecvRecoveryFromCheckpointFinish(_ RecoveryMode) {
 	RecvNeededRecovery = false
 	RecvLSNChecksOn = false
 	RecvNoIbufOperations = false
-	if RecvSysState != nil {
-		RecvApplyHashedLogRecs(true)
-	}
 }
 
 // RecvRecoveryRollbackActive marks recovery rollback invocation.

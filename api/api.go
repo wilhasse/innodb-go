@@ -60,7 +60,11 @@ func Startup(format string) ErrCode {
 	page.PageRegistry = page.NewRegistry()
 	btr.CurVarInit()
 	btr.SearchVarInit()
+	configureLog()
 	log.Init()
+	if err := log.InitErr(); err != nil {
+		return DB_ERROR
+	}
 	trx.TrxVarInit()
 	trx.TrxSysVarInit()
 	trx.PurgeVarInit()
@@ -73,6 +77,11 @@ func Startup(format string) ErrCode {
 	dict.DictBootstrap()
 	if err := loadSchemaFromDict(); err != DB_SUCCESS {
 		return err
+	}
+	if log.NeedsRecovery() {
+		if err := log.Recover(); err != nil {
+			return DB_ERROR
+		}
 	}
 	var bufSize uint64
 	if err := CfgGet("buffer_pool_size", &bufSize); err == DB_SUCCESS && bufSize > 0 {
