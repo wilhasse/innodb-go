@@ -10,7 +10,18 @@ import (
 type RecordKey struct {
 	Table  string
 	PageNo uint32
-	RecID  uint32
+	HeapNo uint16
+}
+
+// RecordPageKey identifies a page that holds records.
+type RecordPageKey struct {
+	Table  string
+	PageNo uint32
+}
+
+// PageKey returns the page-level key for the record.
+func (key RecordKey) PageKey() RecordPageKey {
+	return RecordPageKey{Table: key.Table, PageNo: key.PageNo}
 }
 
 // Queue holds a lock queue.
@@ -49,11 +60,13 @@ func (sys *LockSys) AcquireRecordLock(trx *trx.Trx, record RecordKey, mode Mode)
 	}
 	sys.mu.Lock()
 	defer sys.mu.Unlock()
-	lock := &Lock{Type: LockRec, Mode: mode, Trx: trx, Record: record}
-	queue := sys.recordHash[record]
+	pageKey := record.PageKey()
+	lock := &Lock{Type: LockRec, Mode: mode, Trx: trx, Rec: pageKey}
+	lock.SetBit(int(record.HeapNo))
+	queue := sys.recordHash[pageKey]
 	if queue == nil {
 		queue = &Queue{}
-		sys.recordHash[record] = queue
+		sys.recordHash[pageKey] = queue
 	}
 	queue.Append(lock)
 	sys.addLock(lock)
@@ -72,7 +85,7 @@ func (sys *LockSys) Release(lock *Lock) {
 	case LockTable:
 		queue = sys.tableHash[lock.Table]
 	case LockRec:
-		queue = sys.recordHash[lock.Record]
+		queue = sys.recordHash[lock.Rec]
 	}
 	if queue == nil {
 		return
@@ -98,7 +111,7 @@ func (sys *LockSys) RecordQueue(record RecordKey) *Queue {
 	}
 	sys.mu.Lock()
 	defer sys.mu.Unlock()
-	return sys.recordHash[record]
+	return sys.recordHash[record.PageKey()]
 }
 
 // Append adds a lock to the queue tail.

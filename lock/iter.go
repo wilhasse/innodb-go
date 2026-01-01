@@ -22,7 +22,7 @@ type Lock struct {
 	Mode   Mode
 	Trx    *trx.Trx
 	Table  string
-	Record RecordKey
+	Rec    RecordPageKey
 }
 
 // QueueIterator iterates over a lock queue.

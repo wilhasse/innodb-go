@@ -27,14 +27,14 @@ func TestLockManagerQueues(t *testing.T) {
 		t.Fatalf("expected first lock to be removed")
 	}
 
-	rec := RecordKey{Table: "t1", PageNo: 1, RecID: 5}
+	rec := RecordKey{Table: "t1", PageNo: 1, HeapNo: 5}
 	trx3 := &trx.Trx{}
 	r1 := mgr.AcquireRecordLock(trx3, rec, ModeShared)
 	rqueue := mgr.RecordQueue(rec)
 	if rqueue == nil || rqueue.First != r1 {
 		t.Fatalf("expected record queue to contain lock")
 	}
-	if r1.Trx != trx3 || r1.Record != rec {
+	if r1.Trx != trx3 || r1.Rec != rec.PageKey() || !r1.HasBit(int(rec.HeapNo)) {
 		t.Fatalf("expected record lock metadata to be set")
 	}
 	mgr.Release(r1)

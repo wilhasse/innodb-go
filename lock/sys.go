@@ -10,7 +10,7 @@ import (
 type LockSys struct {
 	mu         sync.Mutex
 	tableHash  map[string]*Queue
-	recordHash map[RecordKey]*Queue
+	recordHash map[RecordPageKey]*Queue
 	trxLocks   map[*trx.Trx]map[*Lock]struct{}
 }
 
@@ -35,7 +35,7 @@ func Sys() *LockSys {
 func NewLockSys() *LockSys {
 	return &LockSys{
 		tableHash:  make(map[string]*Queue),
-		recordHash: make(map[RecordKey]*Queue),
+		recordHash: make(map[RecordPageKey]*Queue),
 		trxLocks:   make(map[*trx.Trx]map[*Lock]struct{}),
 	}
 }
