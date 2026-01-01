@@ -51,6 +51,11 @@ func Init() {
 	System.checkpoint = hdr.CheckpointLSN
 	System.lsn = hdr.CurrentLSN
 	System.flushed = hdr.FlushedLSN
+	if size, err := ibos.FileSize(file); err == nil && size > 0 {
+		System.fileSize = uint64(size)
+	} else {
+		System.fileSize = uint64(logHeaderSize) + System.lsn
+	}
 }
 
 // InitErr returns the last initialization error.
@@ -93,6 +98,7 @@ func ReserveAndWriteFast(data []byte) (endLSN uint64, startLSN uint64) {
 	})
 	System.lsn = end
 	System.writeRecord(start, data)
+	System.persistHeader()
 	return end, start
 }
 
@@ -140,6 +146,7 @@ func Close() uint64 {
 	})
 	System.lsn = end
 	System.writeRecord(System.openStart, System.pending)
+	System.persistHeader()
 	System.open = false
 	System.pending = nil
 	return end
@@ -155,8 +162,16 @@ func FlushUpTo(lsn uint64) uint64 {
 	if lsn > System.lsn {
 		lsn = System.lsn
 	}
+	advanced := false
 	if lsn > System.flushed {
 		System.flushed = lsn
+		advanced = true
+	}
+	if advanced {
+		System.persistHeader()
+		if System.file != nil {
+			_ = ibos.FileFlush(System.file)
+		}
 	}
 	return System.flushed
 }

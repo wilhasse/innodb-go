@@ -27,3 +27,17 @@ func (l *Log) writeRecord(startLSN uint64, data []byte) {
 		l.fileSize = uint64(end)
 	}
 }
+
+func (l *Log) persistHeader() {
+	if l == nil || l.file == nil {
+		return
+	}
+	l.header.StartLSN = l.startLSN
+	l.header.CheckpointLSN = l.checkpoint
+	l.header.FlushedLSN = l.flushed
+	l.header.CurrentLSN = l.lsn
+	if l.header.FileSize == 0 {
+		l.header.FileSize = l.fileSize
+	}
+	_ = writeLogHeader(l.file, l.header)
+}
