@@ -200,8 +200,13 @@ func RecvRecoverPage(spaceID, pageNo uint32, page []byte) bool {
 	}
 	maxLSN := pageLSN(page)
 	for _, rec := range addr.Records {
-		if rec.EndLSN > maxLSN {
-			maxLSN = rec.EndLSN
+		if rec.EndLSN <= maxLSN {
+			continue
+		}
+		if mlogApplyRecord(rec.Type, rec.Data, page) {
+			if rec.EndLSN > maxLSN {
+				maxLSN = rec.EndLSN
+			}
 		}
 	}
 	setPageLSN(page, maxLSN)
@@ -258,18 +263,26 @@ func RecvScanLogRecs(storeToHash bool, buf []byte, startLSN uint64, contiguousLS
 	}
 	offset := 0
 	for offset < len(buf) {
-		rec, size, err := DecodeRecord(buf[offset:])
-		if err != nil {
-			if err == errShortRecord {
-				break
-			}
+		if buf[offset] == mlogMultiRecEnd {
+			offset++
+			continue
+		}
+		recBuf := buf[offset:]
+		rest, typ, space, pageNo, ok := mlogParseInitial(recBuf)
+		if !ok {
 			RecvSysState.FoundCorruptLog = true
 			break
 		}
+		payload, restAfter, ok := mlogParsePayload(typ, rest)
+		if !ok {
+			RecvSysState.FoundCorruptLog = true
+			break
+		}
+		size := len(recBuf) - len(restAfter)
 		recStart := startLSN + uint64(offset)
 		recEnd := recStart + uint64(size)
 		if storeToHash {
-			RecvAddRecord(rec.SpaceID, rec.PageNo, rec.Type, rec.Payload, recStart, recEnd)
+			RecvAddRecord(space, pageNo, typ, append([]byte(nil), payload...), recStart, recEnd)
 		}
 		offset += size
 	}

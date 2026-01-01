@@ -37,10 +37,17 @@ func TestSpaceReadAppliesRecvRecords(t *testing.T) {
 		t.Fatalf("WritePage: %v", err)
 	}
 
-	iblog.RecvAddRecord(1, 0, 1, []byte("x"), 10, 30)
+	payload := make([]byte, 5)
+	mach.WriteTo2(payload[0:], 64)
+	mach.WriteTo2(payload[2:], 1)
+	payload[4] = 'x'
+	iblog.RecvAddRecord(1, 0, 30, payload, 10, 30)
 	buf := make([]byte, ut.UNIV_PAGE_SIZE)
 	if err := SpaceReadPageInto(1, 0, buf); err != nil {
 		t.Fatalf("SpaceReadPageInto: %v", err)
+	}
+	if buf[64] != 'x' {
+		t.Fatalf("expected redo to update page data")
 	}
 	if got := mach.ReadUll(buf[PageLSN:]); got != 30 {
 		t.Fatalf("page LSN=%d, want 30", got)

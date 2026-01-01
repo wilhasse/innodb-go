@@ -30,8 +30,8 @@ func TestRecvScanLogFile(t *testing.T) {
 	RecvSysCreate()
 	RecvSysInit(0)
 
-	ReserveAndWriteFast(EncodeRecord(Record{Type: 1, SpaceID: 10, PageNo: 11, Payload: []byte("a")}))
-	ReserveAndWriteFast(EncodeRecord(Record{Type: 2, SpaceID: 12, PageNo: 13, Payload: []byte("b")}))
+	ReserveAndWriteFast(buildMlogStringRecord(10, 11, 4, []byte("a")))
+	ReserveAndWriteFast(buildMlogStringRecord(12, 13, 4, []byte("b")))
 	FlushUpTo(System.lsn)
 
 	contiguous, scanned, err := RecvScanLogFile(System.file, 0, System.lsn)
