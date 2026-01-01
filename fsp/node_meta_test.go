@@ -8,10 +8,12 @@ import (
 	"github.com/wilhasse/innodb-go/ut"
 )
 
-func TestExtentAllocRestart(t *testing.T) {
+func TestNodeMetadataReload(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "ibdata1")
-	sizeBytes := uint64(2*ExtentSize) * ut.UNIV_PAGE_SIZE
+	path1 := filepath.Join(dir, "ibdata1")
+	path2 := filepath.Join(dir, "ibdata2")
+	size1 := uint64(4) * ut.UNIV_PAGE_SIZE
+	size2 := uint64(3) * ut.UNIV_PAGE_SIZE
 
 	fil.VarInit()
 	Init()
@@ -19,20 +21,13 @@ func TestExtentAllocRestart(t *testing.T) {
 		t.Fatalf("expected system space create")
 	}
 	if err := OpenSystemTablespace(SystemTablespaceSpec{
-		Files: []TablespaceFileSpec{{
-			Path:      path,
-			SizeBytes: sizeBytes,
-		}},
+		Files: []TablespaceFileSpec{
+			{Path: path1, SizeBytes: size1},
+			{Path: path2, SizeBytes: size2},
+		},
 	}); err != nil {
 		t.Fatalf("OpenSystemTablespace: %v", err)
 	}
-
-	p1 := AllocPage(0)
-	p2 := AllocPage(0)
-	if p1 == 0 || p2 == 0 {
-		t.Fatalf("expected allocations beyond header page, got %d and %d", p1, p2)
-	}
-	FreePage(0, p1)
 	if err := CloseSystemTablespace(); err != nil {
 		t.Fatalf("CloseSystemTablespace: %v", err)
 	}
@@ -40,19 +35,18 @@ func TestExtentAllocRestart(t *testing.T) {
 	fil.VarInit()
 	Init()
 	if !fil.SpaceCreate("system", 0, 0, fil.SpaceTablespace) {
-		t.Fatalf("expected system space create on restart")
+		t.Fatalf("expected system space create after restart")
 	}
 	if err := OpenSystemTablespace(SystemTablespaceSpec{
-		Files: []TablespaceFileSpec{{
-			Path:      path,
-			SizeBytes: sizeBytes,
-		}},
+		Files: []TablespaceFileSpec{
+			{Path: path1, SizeBytes: ut.UNIV_PAGE_SIZE},
+			{Path: path2, SizeBytes: ut.UNIV_PAGE_SIZE},
+		},
 	}); err != nil {
 		t.Fatalf("OpenSystemTablespace restart: %v", err)
 	}
-	p3 := AllocPage(0)
-	if p3 != p1 {
-		t.Fatalf("expected reuse of freed page %d, got %d", p1, p3)
+	if got := fil.SpaceGetSize(0); got != 7 {
+		t.Fatalf("space size=%d, want 7", got)
 	}
 	if err := CloseSystemTablespace(); err != nil {
 		t.Fatalf("CloseSystemTablespace restart: %v", err)

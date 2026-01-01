@@ -22,3 +22,6 @@ const (
 )
 
 const extentBitmapBytes = (ExtentSize + 7) / 8
+
+const nodeMetaReservedBytes = 1024
+const nodeMetaOffset = ut.UNIV_PAGE_SIZE - nodeMetaReservedBytes

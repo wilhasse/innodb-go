@@ -4,6 +4,7 @@ import (
 	"errors"
 
 	ibos "github.com/wilhasse/innodb-go/os"
+	"github.com/wilhasse/innodb-go/ut"
 )
 
 // ErrNoSpaceFile reports a missing tablespace file.
@@ -19,6 +20,30 @@ func SpaceSetFile(id uint32, file ibos.File) error {
 		return errors.New("fil: space not found")
 	}
 	space.File = file
+	if file == nil {
+		return nil
+	}
+	if len(space.Nodes) == 0 {
+		sizePages := uint64(0)
+		if size, err := ibos.FileSize(file); err == nil && size > 0 {
+			sizePages = uint64(size / int64(ut.UNIV_PAGE_SIZE))
+		}
+		node := &Node{
+			Space: space,
+			Name:  file.Name(),
+			Open:  true,
+			Size:  sizePages,
+			File:  file,
+		}
+		space.Nodes = append(space.Nodes, node)
+		if sizePages > 0 {
+			space.Size = sizePages
+		}
+		return nil
+	}
+	node := space.Nodes[0]
+	node.File = file
+	node.Open = true
 	return nil
 }
 
@@ -31,6 +56,9 @@ func SpaceGetFile(id uint32) ibos.File {
 	if space == nil {
 		return nil
 	}
+	if space.File == nil && len(space.Nodes) > 0 {
+		return space.Nodes[0].File
+	}
 	return space.File
 }
 
@@ -40,9 +68,16 @@ func SpaceCloseFile(id uint32) {
 	sys.mu.Lock()
 	defer sys.mu.Unlock()
 	space := sys.spacesByID[id]
-	if space == nil || space.File == nil {
+	if space == nil {
 		return
 	}
-	_ = ibos.FileClose(space.File)
+	for _, node := range space.Nodes {
+		if node.File == nil {
+			continue
+		}
+		_ = ibos.FileClose(node.File)
+		node.File = nil
+		node.Open = false
+	}
 	space.File = nil
 }

@@ -44,7 +44,9 @@ func AllocPage(spaceID uint32) uint32 {
 		}
 		extentMark(ext, pageOff, true)
 		pageNo := extentIdx*uint32(ExtentSize) + pageOff
-		ensureSpaceSize(spaceID, pageNo+1)
+		if !ensureSpaceSize(spaceID, pageNo+1) {
+			return fil.NullPageOffset
+		}
 		if spaceID == 0 {
 			_ = persistExtentMap(spaceID, alloc)
 		}
@@ -57,7 +59,9 @@ func AllocPage(spaceID uint32) uint32 {
 	alloc.extents[extentIdx] = ext
 	extentMark(ext, 0, true)
 	pageNo := extentIdx * uint32(ExtentSize)
-	ensureSpaceSize(spaceID, (extentIdx+1)*uint32(ExtentSize))
+	if !ensureSpaceSize(spaceID, (extentIdx+1)*uint32(ExtentSize)) {
+		return fil.NullPageOffset
+	}
 	if spaceID == 0 {
 		_ = persistExtentMap(spaceID, alloc)
 	}
@@ -97,19 +101,31 @@ func ensureAlloc(spaceID uint32) *spaceAlloc {
 	return alloc
 }
 
-func ensureSpaceSize(spaceID uint32, minPages uint32) {
+func ensureSpaceSize(spaceID uint32, minPages uint32) bool {
 	space := fil.SpaceGetByID(spaceID)
 	if space == nil {
-		return
+		return false
 	}
 	if uint64(minPages) <= space.Size {
-		return
+		return true
+	}
+	if spaceID == 0 && !space.Autoextend {
+		return false
 	}
 	inc := uint32(uint64(minPages) - space.Size)
 	HeaderIncSize(spaceID, inc)
-	if space.File != nil {
+	if len(space.Nodes) > 0 {
+		last := space.Nodes[len(space.Nodes)-1]
+		if last != nil {
+			last.Size += uint64(inc)
+			if last.File != nil {
+				_ = ensureFileSize(last.File, uint64(last.Size)*ut.UNIV_PAGE_SIZE)
+			}
+		}
+	} else if space.File != nil {
 		_ = ensureFileSize(space.File, uint64(space.Size)*ut.UNIV_PAGE_SIZE)
 	}
+	return true
 }
 
 func extentCountForPages(pages uint32) uint32 {
@@ -126,10 +142,10 @@ func extentMapOffset(extentIdx uint32) int {
 
 func maxExtentsForPage() uint32 {
 	headerStart := HeaderOffset + ExtentMapOffset
-	if headerStart >= ut.UNIV_PAGE_SIZE {
+	if headerStart >= nodeMetaOffset {
 		return 0
 	}
-	return uint32((ut.UNIV_PAGE_SIZE - headerStart) / extentBitmapBytes)
+	return uint32((nodeMetaOffset - headerStart) / extentBitmapBytes)
 }
 
 func newExtent() *extent {
@@ -264,4 +280,14 @@ func persistExtentMap(spaceID uint32, alloc *spaceAlloc) error {
 		copy(page[off:off+extentBitmapBytes], ext.bitmap)
 	}
 	return fil.WritePage(space.File, 0, page)
+}
+
+func ensureExtentCount(spaceID uint32, count uint32) *spaceAlloc {
+	allocMu.Lock()
+	defer allocMu.Unlock()
+	alloc := ensureAlloc(spaceID)
+	if count > alloc.extentCount {
+		alloc.extentCount = count
+	}
+	return alloc
 }

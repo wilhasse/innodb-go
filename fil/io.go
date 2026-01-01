@@ -48,11 +48,23 @@ func SpaceReadPageInto(spaceID, pageNo uint32, buf []byte) error {
 		return errors.New("fil: page buffer too small")
 	}
 	clear(buf[:ut.UNIV_PAGE_SIZE])
-	file := SpaceGetFile(spaceID)
-	if file == nil {
+	space := SpaceGetByID(spaceID)
+	if space == nil {
 		return nil
 	}
-	_, err := ibos.FileReadPage(file, pageNo, buf)
+	node, localPage := nodeForPage(space, pageNo)
+	if node == nil || node.File == nil {
+		if space.File == nil {
+			return nil
+		}
+		_, err := ibos.FileReadPage(space.File, pageNo, buf)
+		if err != nil && !errors.Is(err, io.EOF) {
+			return err
+		}
+		iblog.RecvRecoverPage(spaceID, pageNo, buf)
+		return nil
+	}
+	_, err := ibos.FileReadPage(node.File, localPage, buf)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return err
 	}
@@ -62,14 +74,43 @@ func SpaceReadPageInto(spaceID, pageNo uint32, buf []byte) error {
 
 // SpaceWritePage writes a page to the file attached to the tablespace.
 func SpaceWritePage(spaceID, pageNo uint32, data []byte) error {
-	file := SpaceGetFile(spaceID)
-	if file == nil {
+	space := SpaceGetByID(spaceID)
+	if space == nil {
+		return nil
+	}
+	node, localPage := nodeForPage(space, pageNo)
+	if node == nil || node.File == nil {
+		if space.File == nil {
+			SpaceEnsureSize(spaceID, uint64(pageNo)+1)
+			return nil
+		}
+		if err := WritePage(space.File, pageNo, data); err != nil {
+			return err
+		}
 		SpaceEnsureSize(spaceID, uint64(pageNo)+1)
 		return nil
 	}
-	if err := WritePage(file, pageNo, data); err != nil {
+	if err := WritePage(node.File, localPage, data); err != nil {
 		return err
 	}
 	SpaceEnsureSize(spaceID, uint64(pageNo)+1)
 	return nil
+}
+
+func nodeForPage(space *Space, pageNo uint32) (*Node, uint32) {
+	if space == nil || len(space.Nodes) == 0 {
+		return nil, 0
+	}
+	var base uint64
+	for _, node := range space.Nodes {
+		if node == nil || node.Size == 0 {
+			continue
+		}
+		end := base + node.Size
+		if uint64(pageNo) < end {
+			return node, uint32(uint64(pageNo) - base)
+		}
+		base = end
+	}
+	return nil, 0
 }

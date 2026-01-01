@@ -23,6 +23,7 @@ type Node struct {
 	Open           bool
 	IsRaw          bool
 	Size           uint64
+	File           ibos.File
 	PendingIO      uint64
 	PendingFlushes uint64
 	ModCounter     int64
@@ -118,6 +119,14 @@ func SpaceDrop(id uint32) {
 		_ = ibos.FileClose(space.File)
 		space.File = nil
 	}
+	for _, node := range space.Nodes {
+		if node.File == nil {
+			continue
+		}
+		_ = ibos.FileClose(node.File)
+		node.File = nil
+		node.Open = false
+	}
 	delete(sys.spacesByID, id)
 	delete(sys.spacesByName, space.Name)
 }
@@ -160,7 +169,11 @@ func SpaceEnsureSize(id uint32, size uint64) {
 		return
 	}
 	if size > space.Size {
+		delta := size - space.Size
 		space.Size = size
+		if len(space.Nodes) > 0 {
+			space.Nodes[len(space.Nodes)-1].Size += delta
+		}
 	}
 }
 
