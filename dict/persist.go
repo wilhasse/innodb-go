@@ -103,6 +103,34 @@ func DictPersistTableDrop(table *Table) error {
 	return DictPersist()
 }
 
+// DictPersistIndexCreate records a new index and persists SYS_* rows.
+func DictPersistIndexCreate(table *Table, index *Index) error {
+	if table == nil || table.Name == "" || index == nil || index.Name == "" {
+		return ErrInvalidName
+	}
+	if DictSys == nil {
+		DictBootstrap()
+	}
+	DictSys.mu.Lock()
+	if DictSys.Tables == nil {
+		DictSys.Tables = make(map[string]*Table)
+	}
+	if table.Indexes == nil {
+		table.Indexes = make(map[string]*Index)
+	}
+	if _, exists := table.Indexes[index.Name]; exists {
+		DictSys.mu.Unlock()
+		return ErrIndexExists
+	}
+	table.Indexes[index.Name] = index
+	removeTableSysRows(table)
+	addTableSysRows(table)
+	dedupeSysRows()
+	DictSys.Tables[table.Name] = table
+	DictSys.mu.Unlock()
+	return DictPersist()
+}
+
 func buildPersistPayload() *sysPersist {
 	payload := &sysPersist{Header: DictSys.Header}
 	payload.Tables = encodeRows(DictSys.SysRows.Tables)

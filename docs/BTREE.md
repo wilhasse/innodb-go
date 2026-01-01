@@ -160,3 +160,10 @@
   - `btr.PageCursor` and `PageTree.Seek/First` iterate clustered leaf records via page links.
   - `api.Cursor` reads/scans from the page cursor and applies `VersionForView` visibility.
   - `api/mvcc_scan_test.go` validates consistent scans skip newer inserts and keep old versions.
+
+## IBGO-248: Secondary index DDL build + persistence
+- C refs: `dict/dict0dict.c`, `row/row0ins.c`
+- Go mapping:
+  - `api.IndexCreate` now persists secondary index metadata in `dict` after building from rows.
+  - `dict.DictPersistIndexCreate` updates SYS_* rows so indexes reload on restart.
+  - `tests/restart_secondary_index_test.go` validates secondary index rebuild after restart.

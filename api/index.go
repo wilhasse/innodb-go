@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 
 	"github.com/wilhasse/innodb-go/btr"
+	"github.com/wilhasse/innodb-go/dict"
+	"github.com/wilhasse/innodb-go/fil"
 	"github.com/wilhasse/innodb-go/row"
 	"github.com/wilhasse/innodb-go/trx"
 )
@@ -59,6 +61,10 @@ func IndexCreate(index *IndexSchema, indexID *uint64) ErrCode {
 			return DB_DUPLICATE_KEY
 		}
 		return DB_ERROR
+	}
+	if err := persistSecondaryIndex(table, index); err != DB_SUCCESS {
+		table.Store.RemoveSecondaryIndex(index.Name)
+		return err
 	}
 	return DB_SUCCESS
 }
@@ -148,4 +154,37 @@ func indexColumnPositions(schema *TableSchema, index *IndexSchema) ([]int, error
 		return nil, errors.New("index: empty column list")
 	}
 	return positions, nil
+}
+
+func persistSecondaryIndex(table *Table, index *IndexSchema) ErrCode {
+	if table == nil || table.Schema == nil || index == nil || index.Name == "" {
+		return DB_ERROR
+	}
+	dictTable := dict.DictTableGet(table.Schema.Name)
+	if dictTable == nil {
+		return DB_ERROR
+	}
+	idxID, err := dict.DictHdrGetNewID(dict.DictHdrIndexID)
+	if err != nil {
+		return DB_ERROR
+	}
+	dictIdx := &dict.Index{
+		Name:      index.Name,
+		ID:        idxID,
+		Fields:    append([]string(nil), index.Columns...),
+		Unique:    index.Unique,
+		Clustered: false,
+		RootPage:  fil.NullPageOffset,
+		SpaceID:   table.SpaceID,
+	}
+	if err := dict.DictPersistIndexCreate(dictTable, dictIdx); err != nil {
+		if errors.Is(err, dict.ErrIndexExists) {
+			return DB_DUPLICATE_KEY
+		}
+		if errors.Is(err, dict.ErrTableNotFound) {
+			return DB_TABLE_NOT_FOUND
+		}
+		return DB_ERROR
+	}
+	return DB_SUCCESS
 }

@@ -31,6 +31,19 @@ func (store *Store) SecondaryIndex(name string) *SecondaryIndex {
 	return store.SecondaryIndexes[strings.ToLower(name)]
 }
 
+// RemoveSecondaryIndex removes a secondary index by name.
+func (store *Store) RemoveSecondaryIndex(name string) {
+	if store == nil || name == "" {
+		return
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.SecondaryIndexes == nil {
+		return
+	}
+	delete(store.SecondaryIndexes, strings.ToLower(name))
+}
+
 // AddSecondaryIndex registers a new secondary index and builds it from rows.
 func (store *Store) AddSecondaryIndex(name string, fields []int, prefixes []int, unique bool) error {
 	if store == nil {
