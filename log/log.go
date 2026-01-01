@@ -206,6 +206,16 @@ func CurrentLSN() uint64 {
 	return System.lsn
 }
 
+// FlushedLSN returns the latest flushed lsn.
+func FlushedLSN() uint64 {
+	if System == nil {
+		return 0
+	}
+	System.mu.Lock()
+	defer System.mu.Unlock()
+	return System.flushed
+}
+
 // Entries returns a snapshot of log entries.
 func Entries() []Entry {
 	if System == nil {
