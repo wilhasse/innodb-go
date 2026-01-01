@@ -95,11 +95,35 @@ func Startup(format string) ErrCode {
 	var bufSize uint64
 	if err := CfgGet("buffer_pool_size", &bufSize); err == DB_SUCCESS && bufSize > 0 {
 		pageSize := buf.BufPoolDefaultPageSize
-		capacity := int(bufSize / uint64(pageSize))
-		if capacity < 1 {
-			capacity = 1
+		totalPages := int(bufSize / uint64(pageSize))
+		if totalPages < 1 {
+			totalPages = 1
 		}
-		buf.SetDefaultPool(buf.NewPool(capacity, pageSize))
+		var instances Ulint
+		if err := CfgGet("buffer_pool_instances", &instances); err != DB_SUCCESS || instances < 1 {
+			instances = 1
+		}
+		instanceCount := int(instances)
+		if instanceCount < 1 {
+			instanceCount = 1
+		}
+		if totalPages < instanceCount {
+			instanceCount = totalPages
+		}
+		capacity := totalPages / instanceCount
+		remainder := totalPages % instanceCount
+		pools := make([]*buf.Pool, instanceCount)
+		for i := 0; i < instanceCount; i++ {
+			cap := capacity
+			if i < remainder {
+				cap++
+			}
+			if cap < 1 {
+				cap = 1
+			}
+			pools[i] = buf.NewPool(cap, pageSize)
+		}
+		buf.SetDefaultPools(pools)
 	}
 	var ahi Bool
 	if err := CfgGet("adaptive_hash_index", &ahi); err == DB_SUCCESS && ahi == IBTrue {
@@ -116,12 +140,10 @@ func Shutdown(_ ShutdownFlag) ErrCode {
 		return err
 	}
 	resetSchemaState()
-	if pool := buf.GetDefaultPool(); pool != nil {
-		_ = pool.Flush()
-	}
+	_ = buf.FlushAll()
 	log.Shutdown()
 	closeSystemTablespace()
-	buf.SetDefaultPool(nil)
+	buf.SetDefaultPools(nil)
 	dict.DictClose()
 	lock.SysClose()
 	fil.VarInit()

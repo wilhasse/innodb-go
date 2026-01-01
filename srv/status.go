@@ -65,12 +65,22 @@ func ExportInnoDBStatus() {
 	ExportVars.InnodbPageSize = ut.UNIV_PAGE_SIZE
 	ExportVars.InnodbHaveAtomicBuiltins = ut.IBool(1)
 
-	stats := buf.PoolStats{}
-	if pool := buf.GetDefaultPool(); pool != nil {
-		stats = pool.Stats()
+	total := 0
+	used := 0
+	dirty := 0
+	var hits uint64
+	var misses uint64
+	for _, pool := range buf.DefaultPools() {
+		if pool == nil {
+			continue
+		}
+		stats := pool.Stats()
+		total += stats.Capacity
+		used += stats.Size
+		dirty += stats.Dirty
+		hits += stats.Hits
+		misses += stats.Misses
 	}
-	total := stats.Capacity
-	used := stats.Size
 	if total < used {
 		total = used
 	}
@@ -78,7 +88,7 @@ func ExportInnoDBStatus() {
 	if total > used {
 		free = total - used
 	}
-	readReqs := stats.Hits + stats.Misses
+	readReqs := hits + misses
 
 	reads := atomic.LoadUint64(&ibos.NFileReads)
 	writes := atomic.LoadUint64(&ibos.NFileWrites)
@@ -97,10 +107,10 @@ func ExportInnoDBStatus() {
 
 	ExportVars.InnodbBufferPoolPagesTotal = ut.Ulint(total)
 	ExportVars.InnodbBufferPoolPagesData = ut.Ulint(used)
-	ExportVars.InnodbBufferPoolPagesDirty = ut.Ulint(stats.Dirty)
+	ExportVars.InnodbBufferPoolPagesDirty = ut.Ulint(dirty)
 	ExportVars.InnodbBufferPoolPagesFree = ut.Ulint(free)
 	ExportVars.InnodbBufferPoolReadRequests = ut.Ulint(readReqs)
-	ExportVars.InnodbBufferPoolReads = ut.Ulint(stats.Misses)
+	ExportVars.InnodbBufferPoolReads = ut.Ulint(misses)
 	ExportVars.InnodbBufferPoolWaitFree = 0
 	ExportVars.InnodbBufferPoolPagesFlushed = ut.Ulint(writes)
 	ExportVars.InnodbBufferPoolWriteRequests = ut.Ulint(writes)

@@ -146,6 +146,14 @@ func registerDefaults() {
 		Value: uint64(128 << 20),
 	})
 	registerVar(&ConfigVar{
+		Name:     "buffer_pool_instances",
+		Type:     CfgTypeUlint,
+		Flag:     CfgFlagReadOnlyAfterStartup,
+		MinValue: 1,
+		MaxValue: ^uint64(0),
+		Value:    Ulint(1),
+	})
+	registerVar(&ConfigVar{
 		Name:  "checksums",
 		Type:  CfgTypeBool,
 		Flag:  CfgFlagNone,

@@ -21,7 +21,7 @@ func PageAlloc(index *dict.Index) *page.Page {
 	p := PageCreate(index.SpaceID, pageNo)
 	page.RegisterPage(p)
 
-	if pool := buf.GetDefaultPool(); pool != nil {
+	if pool := buf.GetPool(index.SpaceID, pageNo); pool != nil {
 		if bufPage, _, err := pool.Fetch(index.SpaceID, pageNo); err == nil {
 			clear(bufPage.Data)
 			pool.MarkDirty(bufPage)
@@ -38,7 +38,7 @@ func PageAlloc(index *dict.Index) *page.Page {
 func PageFreeLow(spaceID, pageNo uint32) {
 	page.DeletePage(spaceID, pageNo)
 	fsp.FreePage(spaceID, pageNo)
-	if pool := buf.GetDefaultPool(); pool != nil {
+	if pool := buf.GetPool(spaceID, pageNo); pool != nil {
 		pool.Drop(spaceID, pageNo)
 	}
 }

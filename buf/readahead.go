@@ -91,9 +91,13 @@ func (r *ReadAhead) Prefetch(pool *Pool, space, pageNo uint32) []PageID {
 		return ids
 	}
 	for _, id := range ids {
-		page, _, err := pool.prefetch(id.Space, id.PageNo)
+		target := pool
+		if mapped := GetPool(id.Space, id.PageNo); mapped != nil {
+			target = mapped
+		}
+		page, _, err := target.prefetch(id.Space, id.PageNo)
 		if err == nil {
-			pool.Release(page)
+			target.Release(page)
 		}
 	}
 	return ids

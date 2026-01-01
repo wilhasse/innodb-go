@@ -11,7 +11,7 @@ var ErrNoBufferPool = errors.New("btr: no buffer pool")
 
 // PageFetch returns the page bytes from the buffer pool.
 func PageFetch(spaceID, pageNo uint32) ([]byte, *buf.Page, error) {
-	pool := buf.GetDefaultPool()
+	pool := buf.GetPool(spaceID, pageNo)
 	if pool == nil {
 		return nil, nil, ErrNoBufferPool
 	}
@@ -24,7 +24,7 @@ func PageFetch(spaceID, pageNo uint32) ([]byte, *buf.Page, error) {
 
 // PageRelease releases a page fetched with PageFetch.
 func PageRelease(page *buf.Page) {
-	pool := buf.GetDefaultPool()
+	pool := buf.GetPool(page.ID.Space, page.ID.PageNo)
 	if pool == nil {
 		return
 	}
