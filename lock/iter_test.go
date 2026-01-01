@@ -3,7 +3,7 @@ package lock
 import "testing"
 
 func TestQueueIteratorResetTable(t *testing.T) {
-	lock := &Lock{Type: LockTable}
+	lock := &Lock{Type: LockTypeTable}
 	iter := &QueueIterator{}
 	iter.Reset(lock, UndefinedBitNo)
 	if iter.Current != lock {
@@ -15,7 +15,7 @@ func TestQueueIteratorResetTable(t *testing.T) {
 }
 
 func TestQueueIteratorResetRec(t *testing.T) {
-	lock := &Lock{Type: LockRec, Bits: []bool{false, true, false}}
+	lock := &Lock{Type: LockTypeRec, Bits: []bool{false, true, false}}
 	iter := &QueueIterator{}
 	iter.Reset(lock, UndefinedBitNo)
 	if iter.BitNo != 1 {
@@ -24,9 +24,9 @@ func TestQueueIteratorResetRec(t *testing.T) {
 }
 
 func TestQueueIteratorPrev(t *testing.T) {
-	first := &Lock{Type: LockTable}
-	second := &Lock{Type: LockTable, Prev: first}
-	third := &Lock{Type: LockTable, Prev: second}
+	first := &Lock{Type: LockTypeTable}
+	second := &Lock{Type: LockTypeTable, Prev: first}
+	third := &Lock{Type: LockTypeTable, Prev: second}
 	iter := &QueueIterator{Current: third}
 
 	if prev := iter.GetPrev(); prev != second {

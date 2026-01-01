@@ -42,7 +42,7 @@ func (sys *LockSys) AcquireTableLock(trx *trx.Trx, table string, mode Mode) *Loc
 	}
 	sys.mu.Lock()
 	defer sys.mu.Unlock()
-	lock := &Lock{Type: LockTable, Mode: mode, Trx: trx, Table: table}
+	lock := &Lock{Type: LockTypeTable, Mode: mode, Trx: trx, Table: table}
 	queue := sys.tableHash[table]
 	if queue == nil {
 		queue = &Queue{}
@@ -61,7 +61,7 @@ func (sys *LockSys) AcquireRecordLock(trx *trx.Trx, record RecordKey, mode Mode)
 	sys.mu.Lock()
 	defer sys.mu.Unlock()
 	pageKey := record.PageKey()
-	lock := &Lock{Type: LockRec, Mode: mode, Trx: trx, Rec: pageKey}
+	lock := &Lock{Type: LockTypeRec, Mode: mode, Trx: trx, Rec: pageKey}
 	lock.SetBit(int(record.HeapNo))
 	queue := sys.recordHash[pageKey]
 	if queue == nil {
@@ -82,9 +82,9 @@ func (sys *LockSys) Release(lock *Lock) {
 	defer sys.mu.Unlock()
 	var queue *Queue
 	switch lock.Type {
-	case LockTable:
+	case LockTypeTable:
 		queue = sys.tableHash[lock.Table]
-	case LockRec:
+	case LockTypeRec:
 		queue = sys.recordHash[lock.Rec]
 	}
 	if queue == nil {

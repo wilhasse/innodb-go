@@ -3,7 +3,7 @@ package lock
 import "testing"
 
 func TestRecordBitOps(t *testing.T) {
-	lock := &Lock{Type: LockRec}
+	lock := &Lock{Type: LockTypeRec}
 	lock.SetBit(3)
 	if !lock.HasBit(3) {
 		t.Fatalf("expected bit to be set")
@@ -19,11 +19,11 @@ func TestRecordBitOps(t *testing.T) {
 
 func TestRecLockIterators(t *testing.T) {
 	queue := &Queue{}
-	l1 := &Lock{Type: LockRec}
+	l1 := &Lock{Type: LockTypeRec}
 	l1.SetBit(1)
-	l2 := &Lock{Type: LockRec}
+	l2 := &Lock{Type: LockTypeRec}
 	l2.SetBit(2)
-	l3 := &Lock{Type: LockRec}
+	l3 := &Lock{Type: LockTypeRec}
 	l3.SetBit(1)
 	queue.Append(l1)
 	queue.Append(l2)

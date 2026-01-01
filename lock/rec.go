@@ -35,7 +35,7 @@ func RecLockFirst(queue *Queue, heapNo int) *Lock {
 		return nil
 	}
 	for lock := queue.First; lock != nil; lock = lock.Next {
-		if lock.Type == LockRec && lock.HasBit(heapNo) {
+		if lock.Type == LockTypeRec && lock.HasBit(heapNo) {
 			return lock
 		}
 	}
@@ -48,7 +48,7 @@ func RecLockNext(lock *Lock, heapNo int) *Lock {
 		return nil
 	}
 	for next := lock.Next; next != nil; next = next.Next {
-		if next.Type == LockRec && next.HasBit(heapNo) {
+		if next.Type == LockTypeRec && next.HasBit(heapNo) {
 			return next
 		}
 	}

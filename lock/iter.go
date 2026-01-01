@@ -9,8 +9,8 @@ const UndefinedBitNo = -1
 type LockType int
 
 const (
-	LockTable LockType = iota
-	LockRec
+	LockTypeTable LockType = iota
+	LockTypeRec
 )
 
 // Lock represents a simplified lock node.
@@ -20,6 +20,7 @@ type Lock struct {
 	Next   *Lock
 	Bits   []bool
 	Mode   Mode
+	Flags  Flags
 	Trx    *trx.Trx
 	Table  string
 	Rec    RecordPageKey
@@ -46,9 +47,9 @@ func (it *QueueIterator) Reset(lock *Lock, bitNo int) {
 		return
 	}
 	switch lock.Type {
-	case LockTable:
+	case LockTypeTable:
 		it.BitNo = UndefinedBitNo
-	case LockRec:
+	case LockTypeRec:
 		it.BitNo = findSetBit(lock)
 	default:
 		it.BitNo = UndefinedBitNo
@@ -62,7 +63,7 @@ func (it *QueueIterator) GetPrev() *Lock {
 	}
 	var prev *Lock
 	switch it.Current.Type {
-	case LockRec, LockTable:
+	case LockTypeRec, LockTypeTable:
 		prev = it.Current.Prev
 	}
 	if prev != nil {
