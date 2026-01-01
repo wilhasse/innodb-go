@@ -50,6 +50,16 @@ func HeaderGetZipSize(page []byte) uint32 {
 	return flags
 }
 
+// HeaderGetExtentCount reads the extent count from the header page.
+func HeaderGetExtentCount(page []byte) uint32 {
+	return readUint32(page, HeaderOffset+ExtentCountOffset)
+}
+
+// HeaderSetExtentCount writes the extent count into the header page.
+func HeaderSetExtentCount(page []byte, count uint32) {
+	writeUint32(page, HeaderOffset+ExtentCountOffset, count)
+}
+
 // HeaderInitFields writes space id and flags to the header page.
 func HeaderInitFields(page []byte, spaceID uint32, flags uint32) {
 	writeUint32(page, HeaderOffset+SpaceIDOffset, spaceID)

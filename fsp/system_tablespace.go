@@ -51,10 +51,14 @@ func OpenSystemTablespace(spec SystemTablespaceSpec) error {
 
 	flags := uint32(0)
 	sizePages := uint32(spec.SizeBytes / ut.UNIV_PAGE_SIZE)
+	var headerPage []byte
 	if !exists {
-		page := make([]byte, ut.UNIV_PAGE_SIZE)
-		initSystemHeaderPage(page, 0, sizePages, flags)
-		if err := fil.WritePage(file, 0, page); err != nil {
+		headerPage = make([]byte, ut.UNIV_PAGE_SIZE)
+		if err := initSystemHeaderPage(headerPage, 0, sizePages, flags); err != nil {
+			_ = ibos.FileClose(file)
+			return err
+		}
+		if err := fil.WritePage(file, 0, headerPage); err != nil {
 			_ = ibos.FileClose(file)
 			return err
 		}
@@ -77,6 +81,7 @@ func OpenSystemTablespace(spec SystemTablespaceSpec) error {
 			_ = ibos.FileClose(file)
 			return err
 		}
+		headerPage = page
 		headerSize := GetSizeLow(page)
 		flags = HeaderGetFlags(page)
 		freeLimit := readUint32(page, HeaderOffset+FreeLimitOffset)
@@ -103,6 +108,10 @@ func OpenSystemTablespace(spec SystemTablespaceSpec) error {
 	}
 
 	if err := fil.SpaceSetFile(0, file); err != nil {
+		_ = ibos.FileClose(file)
+		return err
+	}
+	if err := loadAllocFromHeader(0, headerPage); err != nil {
 		_ = ibos.FileClose(file)
 		return err
 	}
@@ -135,13 +144,26 @@ func ensureFileSize(file ibos.File, sizeBytes uint64) error {
 	return err
 }
 
-func initSystemHeaderPage(page []byte, spaceID uint32, sizePages uint32, flags uint32) {
+func initSystemHeaderPage(page []byte, spaceID uint32, sizePages uint32, flags uint32) error {
 	clear(page)
 	mach.WriteTo4(page[int(fil.PageSpaceOrChecksum):], spaceID)
 	mach.WriteTo4(page[int(fil.PageOffset):], 0)
 	mach.WriteTo2(page[int(fil.PageType):], uint32(fil.PageTypeFspHdr))
 	mach.WriteTo4(page[int(fil.PageArchLogNoOrSpaceID):], spaceID)
 	HeaderInit(page, spaceID, sizePages, flags)
+	extentCount := extentCountForPages(sizePages)
+	if extentCount > maxExtentsForPage() {
+		return errors.New("fsp: extent map exceeds header capacity")
+	}
+	HeaderSetExtentCount(page, extentCount)
+	for idx := uint32(0); idx < extentCount; idx++ {
+		off := extentMapOffset(idx)
+		clear(page[off : off+extentBitmapBytes])
+	}
+	if extentCount > 0 {
+		setExtentBitInPage(page, 0, 0, true)
+	}
+	return nil
 }
 
 func persistSystemHeader(spaceID uint32, sizePages uint32, freeLimit uint32) error {
@@ -152,9 +174,28 @@ func persistSystemHeader(spaceID uint32, sizePages uint32, freeLimit uint32) err
 	page, err := fil.ReadPage(space.File, 0)
 	if err != nil {
 		page = make([]byte, ut.UNIV_PAGE_SIZE)
-		initSystemHeaderPage(page, spaceID, sizePages, space.Flags)
+		if initErr := initSystemHeaderPage(page, spaceID, sizePages, space.Flags); initErr != nil {
+			return initErr
+		}
 	}
 	writeUint32(page, HeaderOffset+SizeOffset, sizePages)
 	writeUint32(page, HeaderOffset+FreeLimitOffset, freeLimit)
 	return fil.WritePage(space.File, 0, page)
+}
+
+func setExtentBitInPage(page []byte, extentIdx uint32, pageOff uint32, used bool) {
+	if pageOff >= uint32(ExtentSize) {
+		return
+	}
+	off := extentMapOffset(extentIdx)
+	if off+extentBitmapBytes > len(page) {
+		return
+	}
+	byteIdx := off + int(pageOff/8)
+	mask := byte(1 << (pageOff % 8))
+	if used {
+		page[byteIdx] |= mask
+		return
+	}
+	page[byteIdx] &^= mask
 }

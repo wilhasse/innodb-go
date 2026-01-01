@@ -12,9 +12,13 @@ const (
 const ExtentSize = 1 << (20 - ut.UnivPageSizeShift)
 
 const (
-	HeaderOffset     = 38
-	SpaceIDOffset    = 0
-	SizeOffset       = 8
-	FreeLimitOffset  = 12
-	SpaceFlagsOffset = 16
+	HeaderOffset      = 38
+	SpaceIDOffset     = 0
+	SizeOffset        = 8
+	FreeLimitOffset   = 12
+	SpaceFlagsOffset  = 16
+	ExtentCountOffset = 20
+	ExtentMapOffset   = 24
 )
+
+const extentBitmapBytes = (ExtentSize + 7) / 8
