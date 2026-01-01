@@ -42,8 +42,12 @@ func TrxRollback(ibTrx *trx.Trx) ErrCode {
 	if ibTrx == nil {
 		return DB_ERROR
 	}
+	undoErr := rollbackUndoRecords(ibTrx)
 	trx.TrxRollback(ibTrx)
 	clearSchemaLock(ibTrx)
+	if undoErr != nil {
+		return DB_ERROR
+	}
 	return DB_SUCCESS
 }
 

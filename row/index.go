@@ -175,6 +175,21 @@ func (store *Store) RowByID(id uint64) *data.Tuple {
 	return store.rowsByID[id]
 }
 
+// RowByKey returns a tuple by its stored key.
+func (store *Store) RowByKey(key []byte) *data.Tuple {
+	if store == nil || len(key) == 0 {
+		return nil
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.ensureIndex()
+	id := lookupRowID(store, key)
+	if id == 0 {
+		return nil
+	}
+	return store.rowsByID[id]
+}
+
 func (store *Store) removeTuple(row *data.Tuple) bool {
 	if store == nil || row == nil {
 		return false
