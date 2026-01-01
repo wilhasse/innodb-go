@@ -73,6 +73,7 @@ func HeaderIncSize(spaceID uint32, sizeInc uint32) {
 	space.Size += uint64(sizeInc)
 	if spaceID == 0 {
 		currentFreeLimit += sizeInc
+		_ = persistSystemHeader(spaceID, uint32(space.Size), currentFreeLimit)
 	}
 }
 

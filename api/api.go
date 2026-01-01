@@ -9,8 +9,8 @@ import (
 	"github.com/wilhasse/innodb-go/dict"
 	"github.com/wilhasse/innodb-go/fil"
 	"github.com/wilhasse/innodb-go/fsp"
-	"github.com/wilhasse/innodb-go/log"
 	"github.com/wilhasse/innodb-go/lock"
+	"github.com/wilhasse/innodb-go/log"
 	"github.com/wilhasse/innodb-go/page"
 	"github.com/wilhasse/innodb-go/trx"
 )
@@ -75,6 +75,9 @@ func Startup(format string) ErrCode {
 		return DB_ERROR
 	}
 	_ = fil.SpaceCreate("log", 1, 0, fil.SpaceLog)
+	if err := openSystemTablespace(); err != DB_SUCCESS {
+		return err
+	}
 	dict.SetDataDir(dataHomeDir())
 	dict.DictBootstrap()
 	if err := loadSchemaFromDict(); err != DB_SUCCESS {
@@ -110,6 +113,7 @@ func Shutdown(_ ShutdownFlag) ErrCode {
 	}
 	resetSchemaState()
 	log.Shutdown()
+	closeSystemTablespace()
 	buf.SetDefaultPool(nil)
 	dict.DictClose()
 	lock.SysClose()

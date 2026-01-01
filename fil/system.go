@@ -41,6 +41,8 @@ type Space struct {
 	Size           uint64
 	Flags          uint32
 	ZipSize        uint32
+	Autoextend     bool
+	AutoextendInc  uint64
 	Nodes          []*Node
 	File           ibos.File
 }
