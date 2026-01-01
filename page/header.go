@@ -80,3 +80,57 @@ func PageGetNRecs(page []byte) uint16 {
 func PageSetNRecs(page []byte, nRecs uint16) {
 	HeaderSetField(page, PageNRecs, nRecs)
 }
+
+// PageGetPrev returns the previous page number from the file header.
+func PageGetPrev(page []byte) uint32 {
+	offs := int(fil.PagePrev)
+	if offs+4 > len(page) {
+		return 0
+	}
+	return mach.ReadFrom4(page[offs:])
+}
+
+// PageSetPrev writes the previous page number into the file header.
+func PageSetPrev(page []byte, prev uint32) {
+	offs := int(fil.PagePrev)
+	if offs+4 > len(page) {
+		return
+	}
+	mach.WriteTo4(page[offs:], prev)
+}
+
+// PageGetNext returns the next page number from the file header.
+func PageGetNext(page []byte) uint32 {
+	offs := int(fil.PageNext)
+	if offs+4 > len(page) {
+		return 0
+	}
+	return mach.ReadFrom4(page[offs:])
+}
+
+// PageSetNext writes the next page number into the file header.
+func PageSetNext(page []byte, next uint32) {
+	offs := int(fil.PageNext)
+	if offs+4 > len(page) {
+		return
+	}
+	mach.WriteTo4(page[offs:], next)
+}
+
+// PageSetType sets the page type in the file header.
+func PageSetType(page []byte, pageType uint16) {
+	offs := int(fil.PageType)
+	if offs+2 > len(page) {
+		return
+	}
+	mach.WriteTo2(page[offs:], uint32(pageType))
+}
+
+// PageGetType returns the page type from the file header.
+func PageGetType(page []byte) uint16 {
+	offs := int(fil.PageType)
+	if offs+2 > len(page) {
+		return 0
+	}
+	return uint16(mach.ReadFrom2(page[offs:]))
+}

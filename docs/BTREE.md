@@ -125,3 +125,10 @@
 - Go mapping:
   - `tools/c/btr_trace.c` emits the same trace using the embedded InnoDB API.
   - `scripts/btr_trace_diff.sh` builds the C harness, runs both traces, and diffs output.
+
+## IBGO-243: Page-based clustered index BTR
+- C refs: `btr/btr0btr.c`, `btr/btr0cur.c`, `page/page0page.c`, `rem/rec0rec.c`
+- Go mapping:
+  - `btr.PageTree` stores records in page bytes, with leaf/node records encoded via `rec`.
+  - Page rebuilds use `page` header/directory helpers and set `fil` prev/next links on leaf splits.
+  - `btr/page_tree_test.go` covers insert/search and split traversal across pages.
