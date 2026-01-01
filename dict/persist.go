@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/gob"
 	"errors"
+	"fmt"
 	"path/filepath"
 
 	"github.com/wilhasse/innodb-go/data"
@@ -80,6 +81,7 @@ func DictPersistTableCreate(table *Table) error {
 	}
 	removeTableSysRows(table)
 	addTableSysRows(table)
+	dedupeSysRows()
 	DictSys.Tables[table.Name] = table
 	DictSys.mu.Unlock()
 	return DictPersist()
@@ -95,6 +97,7 @@ func DictPersistTableDrop(table *Table) error {
 	}
 	DictSys.mu.Lock()
 	removeTableSysRows(table)
+	dedupeSysRows()
 	delete(DictSys.Tables, table.Name)
 	DictSys.mu.Unlock()
 	return DictPersist()
@@ -185,6 +188,107 @@ func removeTableSysRows(table *Table) {
 		}
 		return true
 	})
+}
+
+func dedupeSysRows() {
+	if DictSys == nil {
+		return
+	}
+	DictSys.SysRows.Tables = dedupeTableRows(DictSys.SysRows.Tables)
+	DictSys.SysRows.Columns = dedupeColumnRows(DictSys.SysRows.Columns)
+	DictSys.SysRows.Indexes = dedupeIndexRows(DictSys.SysRows.Indexes)
+	DictSys.SysRows.Fields = dedupeFieldRows(DictSys.SysRows.Fields)
+}
+
+func dedupeTableRows(rows []*data.Tuple) []*data.Tuple {
+	seen := make(map[string]struct{})
+	dst := rows[:0]
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		name, _ := tupleFieldString(row, 0)
+		key := "name:" + name
+		if name == "" {
+			if id, ok := tupleFieldUint64(row, 1); ok {
+				key = fmt.Sprintf("id:%d", id)
+			} else {
+				key = fmt.Sprintf("row:%p", row)
+			}
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		dst = append(dst, row)
+	}
+	return dst
+}
+
+func dedupeColumnRows(rows []*data.Tuple) []*data.Tuple {
+	seen := make(map[string]struct{})
+	dst := rows[:0]
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		tableID, okID := tupleFieldUint64(row, 0)
+		pos, okPos := tupleFieldUint32(row, 1)
+		key := fmt.Sprintf("row:%p", row)
+		if okID && okPos {
+			key = fmt.Sprintf("%d:%d", tableID, pos)
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		dst = append(dst, row)
+	}
+	return dst
+}
+
+func dedupeIndexRows(rows []*data.Tuple) []*data.Tuple {
+	seen := make(map[string]struct{})
+	dst := rows[:0]
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		tableID, okTable := tupleFieldUint64(row, 0)
+		indexID, okIndex := tupleFieldUint64(row, 1)
+		key := fmt.Sprintf("row:%p", row)
+		if okTable && okIndex {
+			key = fmt.Sprintf("%d:%d", tableID, indexID)
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		dst = append(dst, row)
+	}
+	return dst
+}
+
+func dedupeFieldRows(rows []*data.Tuple) []*data.Tuple {
+	seen := make(map[string]struct{})
+	dst := rows[:0]
+	for _, row := range rows {
+		if row == nil {
+			continue
+		}
+		indexID, okIndex := tupleFieldUint64(row, 0)
+		pos, okPos := tupleFieldUint32(row, 1)
+		key := fmt.Sprintf("row:%p", row)
+		if okIndex && okPos {
+			key = fmt.Sprintf("%d:%d", indexID, pos)
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		dst = append(dst, row)
+	}
+	return dst
 }
 
 func filterRows(rows []*data.Tuple, keep func(row *data.Tuple) bool) []*data.Tuple {

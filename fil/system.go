@@ -147,6 +147,21 @@ func SpaceGetSize(id uint32) uint64 {
 	return space.Size
 }
 
+// SpaceEnsureSize grows cached space size if needed.
+func SpaceEnsureSize(id uint32, size uint64) {
+	sys := ensureSystem()
+	sys.mu.Lock()
+	defer sys.mu.Unlock()
+
+	space := sys.spacesByID[id]
+	if space == nil {
+		return
+	}
+	if size > space.Size {
+		space.Size = size
+	}
+}
+
 // SpaceGetType returns the space purpose.
 func SpaceGetType(id uint32) uint32 {
 	space := SpaceGetByID(id)

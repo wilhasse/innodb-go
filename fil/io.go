@@ -62,7 +62,12 @@ func SpaceReadPageInto(spaceID, pageNo uint32, buf []byte) error {
 func SpaceWritePage(spaceID, pageNo uint32, data []byte) error {
 	file := SpaceGetFile(spaceID)
 	if file == nil {
+		SpaceEnsureSize(spaceID, uint64(pageNo)+1)
 		return nil
 	}
-	return WritePage(file, pageNo, data)
+	if err := WritePage(file, pageNo, data); err != nil {
+		return err
+	}
+	SpaceEnsureSize(spaceID, uint64(pageNo)+1)
+	return nil
 }

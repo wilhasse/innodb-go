@@ -21,6 +21,7 @@ func DictBootstrap() {
 		DictSys.SysRows.Columns = decodeRows(payload.Columns, sysColumnsFields)
 		DictSys.SysRows.Indexes = decodeRows(payload.Indexes, sysIndexesFields)
 		DictSys.SysRows.Fields = decodeRows(payload.Fields, sysFieldsFields)
+		dedupeSysRows()
 		DictSys.mu.Unlock()
 		rebuildFromSysRows()
 		return
@@ -57,4 +58,5 @@ func initSysRows() {
 			}
 		}
 	}
+	dedupeSysRows()
 }

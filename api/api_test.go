@@ -29,8 +29,8 @@ func TestAPIVersion(t *testing.T) {
 func TestInitStartupShutdown(t *testing.T) {
 	resetAPIState()
 
-	if got := Shutdown(ShutdownNormal); got != DB_ERROR {
-		t.Fatalf("Shutdown before Init got %v, want %v", got, DB_ERROR)
+	if got := Shutdown(ShutdownNormal); got != DB_SUCCESS {
+		t.Fatalf("Shutdown before Init got %v, want %v", got, DB_SUCCESS)
 	}
 	if got := Init(); got != DB_SUCCESS {
 		t.Fatalf("Init got %v, want %v", got, DB_SUCCESS)

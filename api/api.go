@@ -94,13 +94,13 @@ func Startup(format string) ErrCode {
 
 // Shutdown resets API state.
 func Shutdown(_ ShutdownFlag) ErrCode {
-	if !initialized {
-		return DB_ERROR
-	}
 	if err := CfgShutdown(); err != DB_SUCCESS {
 		return err
 	}
 	resetSchemaState()
+	buf.SetDefaultPool(nil)
+	dict.DictClose()
+	fil.VarInit()
 	started = false
 	activeDBFormat = ""
 	initialized = false
