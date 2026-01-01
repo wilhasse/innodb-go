@@ -71,6 +71,9 @@ func Startup(format string) ErrCode {
 	_ = fil.SpaceCreate("log", 1, 0, fil.SpaceLog)
 	dict.SetDataDir(dataHomeDir())
 	dict.DictBootstrap()
+	if err := loadSchemaFromDict(); err != DB_SUCCESS {
+		return err
+	}
 	var bufSize uint64
 	if err := CfgGet("buffer_pool_size", &bufSize); err == DB_SUCCESS && bufSize > 0 {
 		pageSize := buf.BufPoolDefaultPageSize

@@ -225,38 +225,7 @@ func TableCreate(_ *trx.Trx, schema *TableSchema, tableID *uint64) ErrCode {
 	if tableID != nil {
 		*tableID = id
 	}
-	primaryKey := -1
-	primaryKeyPrefix := 0
-	var primaryKeyFields []int
-	var primaryKeyPrefixes []int
-	if schema != nil {
-		for _, idx := range schema.Indexes {
-			if idx == nil || !idx.Clustered || len(idx.Columns) == 0 {
-				continue
-			}
-			for j, colName := range idx.Columns {
-				colName = strings.ToLower(colName)
-				for i, col := range schema.Columns {
-					if strings.ToLower(col.Name) == colName {
-						primaryKeyFields = append(primaryKeyFields, i)
-						prefix := 0
-						if j < len(idx.Prefixes) {
-							prefix = idx.Prefixes[j]
-						}
-						primaryKeyPrefixes = append(primaryKeyPrefixes, prefix)
-						break
-					}
-				}
-			}
-			if len(primaryKeyFields) > 0 {
-				break
-			}
-		}
-	}
-	if len(primaryKeyFields) == 1 {
-		primaryKey = primaryKeyFields[0]
-		primaryKeyPrefix = primaryKeyPrefixes[0]
-	}
+	primaryKey, primaryKeyPrefix, primaryKeyFields, primaryKeyPrefixes := primaryKeyConfig(schema)
 	store := row.NewStore(primaryKey)
 	store.PrimaryKeyPrefix = primaryKeyPrefix
 	store.PrimaryKeyFields = primaryKeyFields
@@ -376,6 +345,147 @@ func encodeTableFlags(format TableFormat, pageSize int) uint32 {
 		pageSize = 0
 	}
 	return uint32(format) | (uint32(pageSize) << 8)
+}
+
+func decodeTableFlags(flags uint32) (TableFormat, int) {
+	format := TableFormat(flags & 0xFF)
+	pageSize := int(flags >> 8)
+	return format, pageSize
+}
+
+func primaryKeyConfig(schema *TableSchema) (int, int, []int, []int) {
+	primaryKey := -1
+	primaryKeyPrefix := 0
+	var primaryKeyFields []int
+	var primaryKeyPrefixes []int
+	if schema != nil {
+		for _, idx := range schema.Indexes {
+			if idx == nil || !idx.Clustered || len(idx.Columns) == 0 {
+				continue
+			}
+			for j, colName := range idx.Columns {
+				colName = strings.ToLower(colName)
+				for i, col := range schema.Columns {
+					if strings.ToLower(col.Name) == colName {
+						primaryKeyFields = append(primaryKeyFields, i)
+						prefix := 0
+						if j < len(idx.Prefixes) {
+							prefix = idx.Prefixes[j]
+						}
+						primaryKeyPrefixes = append(primaryKeyPrefixes, prefix)
+						break
+					}
+				}
+			}
+			if len(primaryKeyFields) > 0 {
+				break
+			}
+		}
+	}
+	if len(primaryKeyFields) == 1 {
+		primaryKey = primaryKeyFields[0]
+		primaryKeyPrefix = primaryKeyPrefixes[0]
+	}
+	return primaryKey, primaryKeyPrefix, primaryKeyFields, primaryKeyPrefixes
+}
+
+func loadSchemaFromDict() ErrCode {
+	if dict.DictSys == nil {
+		return DB_SUCCESS
+	}
+	schemaMu.Lock()
+	defer schemaMu.Unlock()
+
+	databases = map[string]*Database{}
+	var maxID uint64
+	for _, dtable := range dict.DictSys.Tables {
+		if dtable == nil || strings.HasPrefix(strings.ToUpper(dtable.Name), "SYS_") {
+			continue
+		}
+		dbName, tableName := splitTableName(dtable.Name)
+		if dbName == "" || tableName == "" {
+			continue
+		}
+		dbKey := strings.ToLower(dbName)
+		db := databases[dbKey]
+		if db == nil {
+			db = &Database{Name: dbName, Tables: map[string]*Table{}}
+			databases[dbKey] = db
+		}
+		schema := schemaFromDict(dtable)
+		if schema == nil {
+			continue
+		}
+		primaryKey, primaryKeyPrefix, primaryKeyFields, primaryKeyPrefixes := primaryKeyConfig(schema)
+		store := row.NewStore(primaryKey)
+		store.PrimaryKeyPrefix = primaryKeyPrefix
+		store.PrimaryKeyFields = primaryKeyFields
+		store.PrimaryKeyPrefixes = primaryKeyPrefixes
+		if err := attachTableFile(store, schema.Name); err != DB_SUCCESS {
+			return err
+		}
+		spaceID := dtable.Space
+		if fil.SpaceGetByID(spaceID) == nil {
+			_ = fil.SpaceCreate(dtable.Name, spaceID, 0, fil.SpaceTablespace)
+		}
+		var idx *dict.Index
+		for _, candidate := range dtable.Indexes {
+			if candidate != nil && candidate.Clustered {
+				idx = candidate
+				break
+			}
+		}
+		id := dict.DulintToUint64(dtable.ID)
+		if id > maxID {
+			maxID = id
+		}
+		db.Tables[strings.ToLower(schema.Name)] = &Table{
+			ID:      id,
+			Schema:  schema,
+			Store:   store,
+			SpaceID: spaceID,
+			Index:   idx,
+		}
+	}
+	if maxID > 0 {
+		atomic.StoreUint64(&nextTableID, maxID)
+	}
+	return DB_SUCCESS
+}
+
+func schemaFromDict(table *dict.Table) *TableSchema {
+	if table == nil {
+		return nil
+	}
+	format, pageSize := decodeTableFlags(table.Flags)
+	schema := &TableSchema{
+		Name:     table.Name,
+		Format:   format,
+		PageSize: pageSize,
+	}
+	for _, col := range table.Columns {
+		schema.Columns = append(schema.Columns, ColumnSchema{
+			Name: col.Name,
+			Type: ColType(col.Type.MType),
+			Attr: ColAttr(col.Type.PrType),
+			Size: col.Type.Len,
+		})
+	}
+	for _, idx := range table.Indexes {
+		if idx == nil {
+			continue
+		}
+		idxSchema := &IndexSchema{
+			Name:      idx.Name,
+			Columns:   append([]string(nil), idx.Fields...),
+			Prefixes:  make([]int, len(idx.Fields)),
+			Clustered: idx.Clustered,
+			Unique:    idx.Unique,
+			Table:     schema,
+		}
+		schema.Indexes = append(schema.Indexes, idxSchema)
+	}
+	return schema
 }
 
 func buildDictTable(schema *TableSchema, spaceID uint32, tableID uint64, clustered *dict.Index) (*dict.Table, error) {
