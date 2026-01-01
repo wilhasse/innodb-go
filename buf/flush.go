@@ -22,11 +22,7 @@ func (p *Pool) FlushPage(id PageID) bool {
 	if !ok || !page.Dirty {
 		return false
 	}
-	if err := fil.SpaceWritePage(page.ID.Space, page.ID.PageNo, page.Data); err != nil {
-		return false
-	}
-	page.Dirty = false
-	return true
+	return p.flushDirty(page)
 }
 
 // FlushLRU flushes dirty pages starting from the LRU tail.
@@ -43,11 +39,9 @@ func (p *Pool) FlushLRU(limit int) int {
 	for e := p.lru.back(); e != nil && flushed < limit; e = p.lru.prev(e) {
 		page := e.Value.(*Page)
 		if page.Dirty {
-			if err := fil.SpaceWritePage(page.ID.Space, page.ID.PageNo, page.Data); err != nil {
-				continue
+			if p.flushDirty(page) {
+				flushed++
 			}
-			page.Dirty = false
-			flushed++
 		}
 	}
 	return flushed
@@ -55,7 +49,24 @@ func (p *Pool) FlushLRU(limit int) int {
 
 // FlushList flushes dirty pages from the flush list (LRU in this model).
 func (p *Pool) FlushList(limit int) int {
-	return p.FlushLRU(limit)
+	if p == nil {
+		return 0
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if limit <= 0 {
+		limit = p.flush.Len()
+	}
+	flushed := 0
+	for e := p.flush.Front(); e != nil && flushed < limit; {
+		next := e.Next()
+		page := e.Value.(*Page)
+		if p.flushDirty(page) {
+			flushed++
+		}
+		e = next
+	}
+	return flushed
 }
 
 // FlushType dispatches flush operations.
@@ -74,4 +85,16 @@ func (p *Pool) FlushType(flush FlushType, limit int, id *PageID) int {
 	default:
 		return p.FlushLRU(limit)
 	}
+}
+
+func (p *Pool) flushDirty(page *Page) bool {
+	if p == nil || page == nil || !page.Dirty {
+		return false
+	}
+	if err := fil.SpaceWritePage(page.ID.Space, page.ID.PageNo, page.Data); err != nil {
+		return false
+	}
+	page.Dirty = false
+	p.removeFromFlushList(page)
+	return true
 }

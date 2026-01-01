@@ -23,12 +23,13 @@ type PageID struct {
 
 // Page represents a buffer pool page frame.
 type Page struct {
-	ID       PageID
-	Data     []byte
-	Dirty    bool
-	IsOld    bool
-	PinCount int
-	lruElem  *list.Element
+	ID        PageID
+	Data      []byte
+	Dirty     bool
+	IsOld     bool
+	PinCount  int
+	lruElem   *list.Element
+	flushElem *list.Element
 }
 
 // PoolStats holds buffer pool counters.
@@ -48,6 +49,7 @@ type Pool struct {
 	pageSize int
 	pages    map[PageID]*Page
 	lru      *LRU
+	flush    *list.List
 	hits     uint64
 	misses   uint64
 	evicts   uint64
@@ -66,6 +68,7 @@ func NewPool(capacity int, pageSize int) *Pool {
 		pageSize: pageSize,
 		pages:    make(map[PageID]*Page, capacity),
 		lru:      NewLRU(LruOldRatioDefault),
+		flush:    list.New(),
 	}
 }
 
@@ -134,7 +137,10 @@ func (p *Pool) MarkDirty(page *Page) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	page.Dirty = true
+	if !page.Dirty {
+		page.Dirty = true
+		p.addToFlushList(page)
+	}
 }
 
 // Drop removes a page from the pool by id.
@@ -153,6 +159,7 @@ func (p *Pool) Drop(space, pageNo uint32) {
 	if page.lruElem != nil {
 		p.lru.Remove(page)
 	}
+	p.removeFromFlushList(page)
 }
 
 // Flush clears dirty flags and returns the number of pages flushed.
@@ -160,16 +167,7 @@ func (p *Pool) Flush() int {
 	if p == nil {
 		return 0
 	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	flushed := 0
-	for _, page := range p.pages {
-		if page.Dirty {
-			page.Dirty = false
-			flushed++
-		}
-	}
-	return flushed
+	return p.FlushList(0)
 }
 
 // Stats returns the current buffer pool stats.
@@ -201,10 +199,31 @@ func (p *Pool) evictOne() bool {
 		if page.PinCount > 0 {
 			continue
 		}
+		if page.Dirty {
+			if !p.flushDirty(page) {
+				continue
+			}
+		}
 		delete(p.pages, page.ID)
 		p.lru.Remove(page)
+		p.removeFromFlushList(page)
 		p.evicts++
 		return true
 	}
 	return false
+}
+
+func (p *Pool) addToFlushList(page *Page) {
+	if p.flush == nil || page == nil || page.flushElem != nil {
+		return
+	}
+	page.flushElem = p.flush.PushBack(page)
+}
+
+func (p *Pool) removeFromFlushList(page *Page) {
+	if p.flush == nil || page == nil || page.flushElem == nil {
+		return
+	}
+	p.flush.Remove(page.flushElem)
+	page.flushElem = nil
 }
