@@ -33,7 +33,10 @@ func TestLogFileAppendWrites(t *testing.T) {
 	if start != 0 || end != 3 {
 		t.Fatalf("unexpected lsn start=%d end=%d", start, end)
 	}
-	ReserveAndWriteFast([]byte("de"))
+	end, _ = ReserveAndWriteFast([]byte("de"))
+	if flushed := FlushUpTo(end); flushed != end {
+		t.Fatalf("FlushUpTo=%d, want %d", flushed, end)
+	}
 
 	buf := make([]byte, 5)
 	if _, err := ibos.FileReadAt(System.file, buf, int64(logHeaderSize)); err != nil {

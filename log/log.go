@@ -2,6 +2,7 @@ package log
 
 import (
 	"sync"
+	"sync/atomic"
 
 	ibos "github.com/wilhasse/innodb-go/os"
 )
@@ -15,19 +16,26 @@ type Entry struct {
 
 // Log holds redo log state.
 type Log struct {
-	mu        sync.Mutex
-	entries   []Entry
-	lsn       uint64
-	flushed   uint64
-	startLSN  uint64
-	checkpoint uint64
-	fileSize uint64
-	open      bool
-	openStart uint64
-	pending   []byte
-	file      ibos.File
-	header  logHeader
-	initErr error
+	mu             sync.Mutex
+	entries        []Entry
+	lsn            uint64
+	flushed        uint64
+	startLSN       uint64
+	checkpoint     uint64
+	fileSize       uint64
+	open           bool
+	openStart      uint64
+	pending        []byte
+	buf            []byte
+	bufStartLSN    uint64
+	bufUsed        int
+	flushRequested uint64
+	flushCond      *sync.Cond
+	stopWriter     bool
+	writerDone     chan struct{}
+	file           ibos.File
+	header         logHeader
+	initErr        error
 }
 
 // System is the global redo log.
@@ -35,8 +43,17 @@ var System *Log
 
 // Init initializes the global log system.
 func Init() {
+	if System != nil {
+		Shutdown()
+	}
 	System = &Log{}
+	resetMetrics()
 	cfg, ok := currentConfig()
+	var bufSize uint64
+	if ok {
+		bufSize = cfg.BufferSize
+	}
+	System.initBuffer(bufSize)
 	if !ok || !cfg.Enabled {
 		return
 	}
@@ -82,7 +99,7 @@ func Release() {
 	System.mu.Unlock()
 }
 
-// ReserveAndWriteFast appends a log record immediately.
+// ReserveAndWriteFast appends a log record to the log buffer.
 func ReserveAndWriteFast(data []byte) (endLSN uint64, startLSN uint64) {
 	if System == nil {
 		Init()
@@ -97,8 +114,7 @@ func ReserveAndWriteFast(data []byte) (endLSN uint64, startLSN uint64) {
 		Data:     append([]byte(nil), data...),
 	})
 	System.lsn = end
-	System.writeRecord(start, data)
-	System.persistHeader()
+	System.appendToBufferLocked(data, start)
 	return end, start
 }
 
@@ -145,14 +161,13 @@ func Close() uint64 {
 		Data:     append([]byte(nil), System.pending...),
 	})
 	System.lsn = end
-	System.writeRecord(System.openStart, System.pending)
-	System.persistHeader()
+	System.appendToBufferLocked(System.pending, System.openStart)
 	System.open = false
 	System.pending = nil
 	return end
 }
 
-// FlushUpTo advances the flushed lsn.
+// FlushUpTo waits for the log writer to flush up to the requested lsn.
 func FlushUpTo(lsn uint64) uint64 {
 	if System == nil {
 		return 0
@@ -162,16 +177,21 @@ func FlushUpTo(lsn uint64) uint64 {
 	if lsn > System.lsn {
 		lsn = System.lsn
 	}
-	advanced := false
-	if lsn > System.flushed {
-		System.flushed = lsn
-		advanced = true
+	if lsn <= System.flushed {
+		return System.flushed
 	}
-	if advanced {
-		System.persistHeader()
-		if System.file != nil {
-			_ = ibos.FileFlush(System.file)
+	if lsn > System.flushRequested {
+		System.flushRequested = lsn
+	}
+	atomic.StoreUint64(&NPendingLogFlushes, 1)
+	if System.flushCond != nil {
+		System.flushCond.Broadcast()
+	}
+	for System.flushed < lsn {
+		if System.flushCond == nil {
+			break
 		}
+		System.flushCond.Wait()
 	}
 	return System.flushed
 }

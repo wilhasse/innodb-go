@@ -32,6 +32,7 @@ func TestRecvScanLogFile(t *testing.T) {
 
 	ReserveAndWriteFast(EncodeRecord(Record{Type: 1, SpaceID: 10, PageNo: 11, Payload: []byte("a")}))
 	ReserveAndWriteFast(EncodeRecord(Record{Type: 2, SpaceID: 12, PageNo: 13, Payload: []byte("b")}))
+	FlushUpTo(System.lsn)
 
 	contiguous, scanned, err := RecvScanLogFile(System.file, 0, System.lsn)
 	if err != nil {

@@ -93,8 +93,8 @@ func ExportInnoDBStatus() {
 	reads := atomic.LoadUint64(&ibos.NFileReads)
 	writes := atomic.LoadUint64(&ibos.NFileWrites)
 	syncs := atomic.LoadUint64(&ibos.NFileSyncs)
-	logFlushes := atomic.LoadUint64(&fil.NLogFlushes)
-	pendingLogFlushes := atomic.LoadUint64(&fil.NPendingLogFlushes)
+	logFlushes := atomic.LoadUint64(&iblog.NLogFlushes)
+	pendingLogFlushes := atomic.LoadUint64(&iblog.NPendingLogFlushes)
 	pendingSpaceFlushes := atomic.LoadUint64(&fil.NPendingTablespaceFlushes)
 
 	ExportVars.InnodbDataPendingWrites = ut.Ulint(pendingSpaceFlushes)

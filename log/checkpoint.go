@@ -38,7 +38,16 @@ func Shutdown() {
 	if System == nil {
 		return
 	}
+	FlushUpTo(CurrentLSN())
 	Checkpoint()
+	System.mu.Lock()
+	System.stopWriter = true
+	System.signalWriterLocked()
+	done := System.writerDone
+	System.mu.Unlock()
+	if done != nil {
+		<-done
+	}
 	System.mu.Lock()
 	file := System.file
 	System.file = nil

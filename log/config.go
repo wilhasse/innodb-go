@@ -4,11 +4,12 @@ import "path/filepath"
 
 // Config controls redo log file setup.
 type Config struct {
-	Enabled  bool
-	DataDir  string
-	LogDir   string
-	FileSize uint64
-	Files    int
+	Enabled    bool
+	DataDir    string
+	LogDir     string
+	FileSize   uint64
+	Files      int
+	BufferSize uint64
 }
 
 var (
