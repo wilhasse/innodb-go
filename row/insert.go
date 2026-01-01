@@ -21,6 +21,7 @@ type Store struct {
 	PrimaryKeyFields   []int
 	PrimaryKeyPrefixes []int
 	Tree               *btr.Tree
+	SecondaryIndexes   map[string]*SecondaryIndex
 	versions           map[string]*VersionedRow
 	file               ibos.File
 	filePath           string
@@ -50,6 +51,9 @@ func (store *Store) Insert(tuple *data.Tuple) error {
 	}
 	store.ensureIndex()
 	id := store.nextRowID
+	if store.hasSecondaryDuplicate(tuple, id) {
+		return ErrDuplicateKey
+	}
 	store.nextRowID++
 	store.Rows = append(store.Rows, tuple)
 	if store.rowsByID != nil {
@@ -67,6 +71,7 @@ func (store *Store) Insert(tuple *data.Tuple) error {
 		}
 		store.appendLog(storeOpInsert, key, val)
 	}
+	store.insertSecondaryIndexes(tuple, id)
 	return nil
 }
 

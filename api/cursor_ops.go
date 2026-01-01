@@ -111,6 +111,11 @@ func findRowForUpdate(crsr *Cursor, tpl *data.Tuple) *data.Tuple {
 	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil || crsr.Tree == nil || tpl == nil {
 		return nil
 	}
+	if crsr.Index != nil {
+		if row, ok := cursorRow(crsr); ok {
+			return row
+		}
+	}
 	store := crsr.Table.Store
 	keyFields := searchFieldCount(tpl)
 	if keyFields == 0 {

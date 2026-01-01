@@ -275,6 +275,27 @@ func TableCreate(_ *trx.Trx, schema *TableSchema, tableID *uint64) ErrCode {
 		_ = store.DeleteFile()
 		return DB_ERROR
 	}
+	for _, idxSchema := range schema.Indexes {
+		if idxSchema == nil || idxSchema.Clustered {
+			continue
+		}
+		fields, err := indexColumnPositions(schema, idxSchema)
+		if err != nil {
+			btr.FreeRoot(index)
+			fil.SpaceDrop(spaceID)
+			_ = store.DeleteFile()
+			return DB_SCHEMA_ERROR
+		}
+		if err := store.AddSecondaryIndex(idxSchema.Name, fields, idxSchema.Prefixes, idxSchema.Unique); err != nil {
+			btr.FreeRoot(index)
+			fil.SpaceDrop(spaceID)
+			_ = store.DeleteFile()
+			if errors.Is(err, row.ErrDuplicateKey) {
+				return DB_DUPLICATE_KEY
+			}
+			return DB_ERROR
+		}
+	}
 	db.Tables[strings.ToLower(schema.Name)] = &Table{ID: id, Schema: schema, Store: store, SpaceID: spaceID, Index: index}
 	return DB_SUCCESS
 }
@@ -438,6 +459,21 @@ func loadSchemaFromDict() ErrCode {
 		id := dict.DulintToUint64(dtable.ID)
 		if id > maxID {
 			maxID = id
+		}
+		for _, idxSchema := range schema.Indexes {
+			if idxSchema == nil || idxSchema.Clustered {
+				continue
+			}
+			fields, err := indexColumnPositions(schema, idxSchema)
+			if err != nil {
+				return DB_SCHEMA_ERROR
+			}
+			if err := store.AddSecondaryIndex(idxSchema.Name, fields, idxSchema.Prefixes, idxSchema.Unique); err != nil {
+				if errors.Is(err, row.ErrDuplicateKey) {
+					return DB_DUPLICATE_KEY
+				}
+				return DB_ERROR
+			}
 		}
 		db.Tables[strings.ToLower(schema.Name)] = &Table{
 			ID:      id,

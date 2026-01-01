@@ -139,3 +139,10 @@
   - `LeafInsertBytes` now inserts records in key order and rebuilds page directory/heap offsets.
   - `SearchRecordBytes` decodes records with or without compact headers; delete-mark + reorg paths stay intact.
   - `btr/insert_test.go` adds ordering and garbage/free-list cleanup coverage.
+
+## IBGO-245: Secondary index B-tree storage + maintenance
+- C refs: `btr/btr0btr.c`, `row/row0ins.c`, `row/row0upd.c`
+- Go mapping:
+  - `row.Store` tracks `SecondaryIndex` trees keyed by indexed columns; DML updates secondary trees.
+  - `IndexCreate`/`TableCreate` build secondary indexes and `CursorOpenIndexUsingName` routes to the right tree.
+  - `tests/secondary_index_test.go` validates secondary index scan order.

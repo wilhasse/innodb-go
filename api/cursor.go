@@ -44,6 +44,7 @@ const (
 type Cursor struct {
 	Table      *Table
 	Tree       *btr.Tree
+	Index      *row.SecondaryIndex
 	treeCur    *btr.Cursor
 	pcur       *btr.Pcur
 	lastKey    []byte
@@ -235,7 +236,7 @@ func CursorReadRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 	if crsr.treeCur == nil || !crsr.treeCur.Valid() {
 		return DB_RECORD_NOT_FOUND
 	}
-	if crsr.Trx != nil && crsr.Trx.ReadView != nil && crsr.Table.Store != nil {
+	if crsr.Index == nil && crsr.Trx != nil && crsr.Trx.ReadView != nil && crsr.Table.Store != nil {
 		if key := crsr.treeCur.Key(); len(key) > 0 {
 			if visible, ok := crsr.Table.Store.VersionForView(key, crsr.Trx.ReadView); ok {
 				if visible == nil {
@@ -310,16 +311,34 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 	if keyFields == 0 {
 		return DB_ERROR
 	}
-	pkFields := primaryKeyCols(crsr.Table)
-	if pkFields > 0 && keyFields > pkFields {
-		keyFields = pkFields
-	}
 	exactRequired := crsr.MatchMode == IB_EXACT_MATCH
 	prefixRequired := crsr.MatchMode == IB_EXACT_PREFIX
 	if crsr.Table.Store == nil {
 		return DB_ERROR
 	}
-	searchKey := crsr.Table.Store.KeyForSearch(tpl, keyFields)
+	store := crsr.Table.Store
+	var pkFields int
+	var searchKey []byte
+	var cols []int
+	var prefixes []int
+	if crsr.Index != nil {
+		cols = crsr.Index.Fields
+		prefixes = crsr.Index.Prefixes
+		if keyFields > len(cols) {
+			keyFields = len(cols)
+		}
+		if keyFields == 0 {
+			return DB_ERROR
+		}
+		pkFields = len(cols)
+		searchKey = store.KeyForSecondarySearch(crsr.Index, tpl, keyFields)
+	} else {
+		pkFields = primaryKeyCols(crsr.Table)
+		if pkFields > 0 && keyFields > pkFields {
+			keyFields = pkFields
+		}
+		searchKey = store.KeyForSearch(tpl, keyFields)
+	}
 	if len(searchKey) == 0 {
 		return DB_ERROR
 	}
@@ -328,7 +347,7 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 		return DB_ERROR
 	}
 	if !pcur.Cur.Search(searchKey, btr.SearchGE) {
-		if exactRequired && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
+		if exactRequired && crsr.Index == nil && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
 			return DB_SUCCESS
 		}
 		return DB_RECORD_NOT_FOUND
@@ -341,14 +360,19 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 			}
 			continue
 		}
-		rowTuple := crsr.Table.Store.RowByID(rowID)
+		rowTuple := store.RowByID(rowID)
 		if rowTuple == nil {
 			if !pcur.Cur.Next() {
 				break
 			}
 			continue
 		}
-		cmp := compareTuplePrefix(rowTuple, tpl, keyFields)
+		cmp := 0
+		if crsr.Index != nil {
+			cmp = compareIndexTuplePrefix(rowTuple, tpl, cols, keyFields)
+		} else {
+			cmp = compareTuplePrefix(rowTuple, tpl, keyFields)
+		}
 		switch mode {
 		case CursorGE:
 			if cmp < 0 {
@@ -365,11 +389,20 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 				continue
 			}
 		}
-		if prefixRequired && !tupleHasPrefix(rowTuple, tpl, keyFields) {
-			if !pcur.Cur.Next() {
-				return DB_RECORD_NOT_FOUND
+		if prefixRequired {
+			if crsr.Index != nil {
+				if !tupleHasIndexPrefix(rowTuple, tpl, cols, prefixes, keyFields) {
+					if !pcur.Cur.Next() {
+						return DB_RECORD_NOT_FOUND
+					}
+					continue
+				}
+			} else if !tupleHasPrefix(rowTuple, tpl, keyFields) {
+				if !pcur.Cur.Next() {
+					return DB_RECORD_NOT_FOUND
+				}
+				continue
 			}
-			continue
 		}
 		if exactRequired {
 			if cmp != 0 || (pkFields > 0 && keyFields != pkFields) {
@@ -390,7 +423,7 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 		}
 		return DB_SUCCESS
 	}
-	if exactRequired && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
+	if exactRequired && crsr.Index == nil && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
 		return DB_SUCCESS
 	}
 	return DB_RECORD_NOT_FOUND
@@ -486,6 +519,33 @@ func compareTuplePrefix(row, search *data.Tuple, n int) int {
 	return 0
 }
 
+func compareIndexTuplePrefix(row, search *data.Tuple, cols []int, n int) int {
+	if row == nil || search == nil {
+		switch {
+		case row == search:
+			return 0
+		case row == nil:
+			return -1
+		default:
+			return 1
+		}
+	}
+	if n > len(cols) {
+		n = len(cols)
+	}
+	for i := 0; i < n; i++ {
+		col := cols[i]
+		if col < 0 || col >= len(row.Fields) || col >= len(search.Fields) {
+			return 0
+		}
+		cmp := data.CompareFields(&row.Fields[col], &search.Fields[col])
+		if cmp != 0 {
+			return cmp
+		}
+	}
+	return 0
+}
+
 func tupleHasPrefix(row, search *data.Tuple, n int) bool {
 	if row == nil || search == nil {
 		return false
@@ -498,6 +558,29 @@ func tupleHasPrefix(row, search *data.Tuple, n int) bool {
 	}
 	for i := 0; i < n; i++ {
 		if !fieldHasPrefix(row.Fields[i], search.Fields[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func tupleHasIndexPrefix(row, search *data.Tuple, cols []int, prefixes []int, n int) bool {
+	if row == nil || search == nil {
+		return false
+	}
+	if n > len(cols) {
+		n = len(cols)
+	}
+	for i := 0; i < n; i++ {
+		col := cols[i]
+		if col < 0 || col >= len(row.Fields) || col >= len(search.Fields) {
+			return false
+		}
+		prefix := 0
+		if i < len(prefixes) {
+			prefix = prefixes[i]
+		}
+		if !fieldHasPrefixLen(row.Fields[col], search.Fields[col], prefix) {
 			return false
 		}
 	}
@@ -517,6 +600,32 @@ func fieldHasPrefix(row, search data.Field) bool {
 	slen := int(search.Len)
 	if slen > len(search.Data) {
 		slen = len(search.Data)
+	}
+	if slen > len(row.Data) {
+		return false
+	}
+	return bytes.Equal(row.Data[:slen], search.Data[:slen])
+}
+
+func fieldHasPrefixLen(row, search data.Field, prefix int) bool {
+	if prefix <= 0 {
+		return fieldHasPrefix(row, search)
+	}
+	if search.Len == data.UnivSQLNull {
+		return row.Len == data.UnivSQLNull
+	}
+	if search.Len == 0 && len(search.Data) == 0 {
+		return true
+	}
+	if row.Len == data.UnivSQLNull {
+		return false
+	}
+	slen := int(search.Len)
+	if slen > len(search.Data) {
+		slen = len(search.Data)
+	}
+	if prefix < slen {
+		slen = prefix
 	}
 	if slen > len(row.Data) {
 		return false

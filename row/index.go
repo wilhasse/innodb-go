@@ -110,6 +110,14 @@ func (store *Store) rebuildIndex() {
 		return
 	}
 	store.Tree = btr.NewTree(storeTreeOrder, CompareKeys)
+	if store.SecondaryIndexes != nil {
+		for _, idx := range store.SecondaryIndexes {
+			if idx == nil {
+				continue
+			}
+			idx.Tree = btr.NewTree(storeTreeOrder, CompareKeys)
+		}
+	}
 	store.rowsByID = make(map[uint64]*data.Tuple)
 	store.idByRow = make(map[*data.Tuple]uint64)
 	store.versions = make(map[string]*VersionedRow)
@@ -126,6 +134,18 @@ func (store *Store) rebuildIndex() {
 		store.Tree.Insert(key, encodeRowValue(id, row))
 		if len(key) > 0 {
 			store.versions[string(key)] = NewVersionedRow(0, row)
+		}
+		if store.SecondaryIndexes != nil {
+			for _, idx := range store.SecondaryIndexes {
+				if idx == nil || idx.Tree == nil {
+					continue
+				}
+				secKey := store.secondaryKeyForInsert(idx, row, id)
+				if len(secKey) == 0 {
+					continue
+				}
+				idx.Tree.Insert(secKey, encodeRowID(id))
+			}
 		}
 	}
 }
@@ -222,6 +242,7 @@ func (store *Store) removeTuple(row *data.Tuple) bool {
 	if ok {
 		delete(store.idByRow, row)
 		delete(store.rowsByID, id)
+		store.deleteSecondaryIndexes(row, id)
 		if store.Tree != nil {
 			key := store.keyForInsert(row, id)
 			cur := btr.NewCur(store.Tree)
@@ -267,6 +288,9 @@ func (store *Store) replaceTuple(oldRow, newRow *data.Tuple) error {
 	if !bytes.Equal(oldKey, newKey) && store.hasDuplicateExcept(newRow, oldRow) {
 		return ErrDuplicateKey
 	}
+	if store.hasSecondaryDuplicateExcept(newRow, oldRow, id) {
+		return ErrDuplicateKey
+	}
 	for i, existing := range store.Rows {
 		if existing == oldRow {
 			store.Rows[i] = newRow
@@ -290,6 +314,9 @@ func (store *Store) replaceTuple(oldRow, newRow *data.Tuple) error {
 		if !cur.OptimisticInsert(newKey, val) {
 			store.Tree.Insert(newKey, val)
 		}
+	}
+	if err := store.updateSecondaryIndexes(oldRow, newRow, id); err != nil {
+		return err
 	}
 	store.appendLog(storeOpUpdate, newKey, encodeRowValue(id, newRow))
 	return nil
