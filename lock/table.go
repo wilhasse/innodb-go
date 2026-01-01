@@ -3,25 +3,25 @@ package lock
 import "github.com/wilhasse/innodb-go/trx"
 
 // LockTable acquires a table lock in the global lock system.
-func LockTable(trx *trx.Trx, table string, mode Mode) (*Lock, Status) {
+func LockTable(tr *trx.Trx, table string, mode Mode) (*Lock, Status) {
 	sys := Sys()
 	if sys == nil {
 		return nil, LockGranted
 	}
-	return sys.LockTable(trx, table, mode)
+	return sys.LockTable(tr, table, mode)
 }
 
 // UnlockTable releases table locks in the global lock system.
-func UnlockTable(trx *trx.Trx, table string) {
+func UnlockTable(tr *trx.Trx, table string) {
 	sys := Sys()
 	if sys == nil {
 		return
 	}
-	sys.UnlockTable(trx, table)
+	sys.UnlockTable(tr, table)
 }
 
 // LockTable acquires a table lock in a lock system.
-func (sys *LockSys) LockTable(trx *trx.Trx, table string, mode Mode) (*Lock, Status) {
+func (sys *LockSys) LockTable(tr *trx.Trx, table string, mode Mode) (*Lock, Status) {
 	if sys == nil {
 		return nil, LockGranted
 	}
@@ -35,33 +35,50 @@ func (sys *LockSys) LockTable(trx *trx.Trx, table string, mode Mode) (*Lock, Sta
 	}
 
 	var own *Lock
+	var blockers []*trx.Trx
 	for lock := queue.First; lock != nil; lock = lock.Next {
-		if lock.Trx == trx {
+		if lock.Trx == tr {
 			own = lock
-		} else if !ModeCompatible(mode, lock.Mode) {
-			waiter := &Lock{Type: LockTypeTable, Mode: mode, Trx: trx, Table: table, Flags: FlagWait}
-			queue.Append(waiter)
-			sys.addLock(waiter)
-			return waiter, LockWait
+			continue
 		}
+		if !ModeCompatible(mode, lock.Mode) && lock.Trx != nil {
+			blockers = append(blockers, lock.Trx)
+		}
+	}
+
+	if len(blockers) > 0 {
+		for _, blocker := range blockers {
+			sys.addWaitEdge(tr, blocker)
+		}
+		if sys.deadlock(tr) {
+			sys.clearWaitEdges(tr)
+			return nil, LockDeadlock
+		}
+		waiter := &Lock{Type: LockTypeTable, Mode: mode, Trx: tr, Table: table, Flags: FlagWait}
+		queue.Append(waiter)
+		sys.addLock(waiter)
+		return waiter, LockWait
 	}
 
 	if own != nil {
 		if ModeStrongerOrEq(own.Mode, mode) {
+			sys.clearWaitEdges(tr)
 			return own, LockGranted
 		}
 		own.Mode = mode
+		sys.clearWaitEdges(tr)
 		return own, LockGranted
 	}
 
-	lock := &Lock{Type: LockTypeTable, Mode: mode, Trx: trx, Table: table}
+	lock := &Lock{Type: LockTypeTable, Mode: mode, Trx: tr, Table: table}
 	queue.Append(lock)
 	sys.addLock(lock)
+	sys.clearWaitEdges(tr)
 	return lock, LockGranted
 }
 
 // UnlockTable releases table locks held by the transaction.
-func (sys *LockSys) UnlockTable(trx *trx.Trx, table string) {
+func (sys *LockSys) UnlockTable(tr *trx.Trx, table string) {
 	if sys == nil {
 		return
 	}
@@ -74,7 +91,7 @@ func (sys *LockSys) UnlockTable(trx *trx.Trx, table string) {
 	}
 	for lock := queue.First; lock != nil; {
 		next := lock.Next
-		if lock.Trx == trx {
+		if lock.Trx == tr {
 			queue.Remove(lock)
 			sys.removeLock(lock)
 		}

@@ -12,6 +12,7 @@ type LockSys struct {
 	tableHash  map[string]*Queue
 	recordHash map[RecordPageKey]*Queue
 	trxLocks   map[*trx.Trx]map[*Lock]struct{}
+	waitFor    map[*trx.Trx]map[*trx.Trx]struct{}
 }
 
 var system *LockSys
@@ -37,6 +38,7 @@ func NewLockSys() *LockSys {
 		tableHash:  make(map[string]*Queue),
 		recordHash: make(map[RecordPageKey]*Queue),
 		trxLocks:   make(map[*trx.Trx]map[*Lock]struct{}),
+		waitFor:    make(map[*trx.Trx]map[*trx.Trx]struct{}),
 	}
 }
 
