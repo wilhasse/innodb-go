@@ -9,18 +9,18 @@ rough indicator and are taken from `wc -l` over each Go package directory.
 | Subsystem | C Lines (approx) | Go Lines (approx) | Status | Notes |
 | --- | --- | --- | --- | --- |
 | btr (B-tree) | ~7,000 | 3,794 | Partial | Core tree ops, splits, cursors, trace harness; still in-memory and simplified. |
-| dict (dictionary) | ~4,000 | 1,073 | Partial | Basic table/index metadata, no persistent dictionary. |
+| dict (dictionary) | ~4,000 | 1,380 | Partial | SYS_* rows persisted to `ib_dict.sys` and reloaded on startup (not B-tree stored). |
 | page (page format) | ~3,000 | 660 | Partial | Page headers + record list basics only. |
-| fil (files) | ~3,500 | 375 | Minimal | In-memory tablespace registry; .ibd creation handled at API/store level. |
-| buf (buffer pool) | ~8,000 | 1,072 | Minimal | Simplified pool + LRU; no flush lists/read-ahead. |
+| fil (files) | ~3,500 | 460 | Minimal | Tablespace registry with attached files; page read/write helpers auto-extend size. |
+| buf (buffer pool) | ~8,000 | 1,120 | Minimal | Simplified pool + LRU; fetch/flush uses fil page IO. |
 | log (redo log) | ~3,000 | 558 | Minimal | In-memory log records only, no WAL or recovery. |
 | lock (locking) | ~5,700 | 352 | Minimal | No row locks, no deadlock detection. |
 | trx (transactions) | ~4,500 | 1,273 | Minimal | IDs + scaffolding only, no real isolation or rollback. |
-| row (row ops) | ~7,000 | 1,791 | Partial | Basic row ops + BTR integration; no query graphs/prebuilt. |
+| row (row ops) | ~7,000 | 1,900 | Partial | Basic row ops + BTR integration; row-store log replay on attach. |
 | read (read views) | ~500 | 194 | Minimal | No MVCC snapshots. |
 | rem (record mgr) | ~2,000 | 378 | Partial | Basic record format helpers only. |
+| rec | ~2,000 | 620 | Partial | Record encoding/decoding, headers, and comparison helpers. |
 | undo | ~2,000 | 0 | Missing | Not implemented. |
-| rec | ~2,000 | 0 | Missing | Not implemented. |
 | purge | ~1,500 | 0 | Missing | Not implemented. |
 
 ## Missing Core Features
@@ -98,6 +98,7 @@ Key C files for missing features:
 
 The Go port should be able to:
 - Create/drop databases and tables
+- Persist schema metadata across restart (`ib_dict.sys`)
 - Insert/update/delete rows via BTR
 - Scan tables with cursors
 - Create .ibd tablespace files
