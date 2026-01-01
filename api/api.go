@@ -116,6 +116,9 @@ func Shutdown(_ ShutdownFlag) ErrCode {
 		return err
 	}
 	resetSchemaState()
+	if pool := buf.GetDefaultPool(); pool != nil {
+		_ = pool.Flush()
+	}
 	log.Shutdown()
 	closeSystemTablespace()
 	buf.SetDefaultPool(nil)
