@@ -10,6 +10,7 @@ import (
 	"github.com/wilhasse/innodb-go/dict"
 	"github.com/wilhasse/innodb-go/fil"
 	"github.com/wilhasse/innodb-go/fsp"
+	"github.com/wilhasse/innodb-go/mach"
 	"github.com/wilhasse/innodb-go/page"
 	"github.com/wilhasse/innodb-go/ut"
 )
@@ -109,6 +110,8 @@ func TestPageAllocWritesZeroPage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read page: %v", err)
 	}
+	mach.WriteTo4(pageBytes[fil.PageSpaceOrChecksum:], 0)
+	mach.WriteUll(pageBytes[fil.PageLSN:], 0)
 	for i, b := range pageBytes {
 		if b != 0 {
 			t.Fatalf("expected zero page at byte %d, got %d", i, b)

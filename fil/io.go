@@ -18,6 +18,9 @@ func ReadPage(file ibos.File, pageNo uint32) ([]byte, error) {
 	if _, err := ibos.FileReadPage(file, pageNo, buf); err != nil {
 		return nil, err
 	}
+	if err := verifyPageChecksum(buf); err != nil {
+		return nil, err
+	}
 	return buf, nil
 }
 
@@ -29,6 +32,7 @@ func WritePage(file ibos.File, pageNo uint32, data []byte) error {
 	if len(data) < ut.UNIV_PAGE_SIZE {
 		return errors.New("fil: page buffer too small")
 	}
+	applyPageChecksum(data)
 	_, err := ibos.FileWritePage(file, pageNo, data)
 	return err
 }
@@ -61,12 +65,22 @@ func SpaceReadPageInto(spaceID, pageNo uint32, buf []byte) error {
 		if err != nil && !errors.Is(err, io.EOF) {
 			return err
 		}
+		if err == nil {
+			if err := verifyPageChecksum(buf); err != nil {
+				return err
+			}
+		}
 		iblog.RecvRecoverPage(spaceID, pageNo, buf)
 		return nil
 	}
 	_, err := ibos.FileReadPage(node.File, localPage, buf)
 	if err != nil && !errors.Is(err, io.EOF) {
 		return err
+	}
+	if err == nil {
+		if err := verifyPageChecksum(buf); err != nil {
+			return err
+		}
 	}
 	iblog.RecvRecoverPage(spaceID, pageNo, buf)
 	return nil

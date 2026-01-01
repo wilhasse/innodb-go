@@ -61,6 +61,10 @@ func Startup(format string) ErrCode {
 	page.PageRegistry = page.NewRegistry()
 	btr.CurVarInit()
 	btr.SearchVarInit()
+	var checksums Bool
+	if err := CfgGet("checksums", &checksums); err == DB_SUCCESS {
+		fil.SetChecksumsEnabled(checksums == IBTrue)
+	}
 	configureLog()
 	log.Init()
 	if err := log.InitErr(); err != nil {
