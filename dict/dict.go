@@ -16,7 +16,6 @@ func DictInitCore() {
 // DictClose resets dictionary globals.
 func DictClose() {
 	DictSys = nil
-	dictDataDir = ""
 }
 
 // DictCasednStr lowercases a UTF-8 string.

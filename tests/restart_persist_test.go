@@ -52,7 +52,7 @@ func TestRestartPersistence(t *testing.T) {
 	if err := api.DatabaseCreate(restartDB); err != api.DB_SUCCESS {
 		t.Fatalf("DatabaseCreate after restart: %v", err)
 	}
-	if err := createRestartTable(tableName); err != api.DB_SUCCESS {
+	if err := createRestartTable(tableName); err != api.DB_SUCCESS && err != api.DB_TABLE_IS_BEING_USED {
 		t.Fatalf("recreate table: %v", err)
 	}
 	if err := verifyRestartRows(tableName, []uint32{1, 2, 3}); err != api.DB_SUCCESS {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"os"
 	"path/filepath"
 
 	"github.com/wilhasse/innodb-go/row"
@@ -16,13 +17,13 @@ func filePerTableEnabled() bool {
 
 func dataHomeDir() string {
 	var dir string
-	if err := CfgGet("data_home_dir", &dir); err != DB_SUCCESS {
-		return "."
+	if err := CfgGet("data_home_dir", &dir); err == DB_SUCCESS && dir != "" {
+		return dir
 	}
-	if dir == "" {
-		return "."
+	if env := os.Getenv("INNODB_DATA_HOME_DIR"); env != "" {
+		return env
 	}
-	return dir
+	return "."
 }
 
 func tableFilePath(name string) (string, ErrCode) {

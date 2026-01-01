@@ -96,5 +96,6 @@ func TestCfgHarness(t *testing.T) {
 
 func resetAPI(t *testing.T) {
 	t.Helper()
+	t.Setenv("INNODB_DATA_HOME_DIR", t.TempDir())
 	_ = api.Shutdown(api.ShutdownNormal)
 }

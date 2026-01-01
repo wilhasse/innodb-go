@@ -233,7 +233,14 @@ func testConfigure() api.ErrCode {
 	if err := api.CfgSet("file_per_table", true); err != api.DB_SUCCESS {
 		return err
 	}
-	if err := api.CfgSet("data_home_dir", "./"); err != api.DB_SUCCESS {
+	dataHome := os.Getenv("INNODB_DATA_HOME_DIR")
+	if dataHome == "" {
+		dataHome = "./"
+	}
+	if !strings.HasSuffix(dataHome, "/") {
+		dataHome += "/"
+	}
+	if err := api.CfgSet("data_home_dir", dataHome); err != api.DB_SUCCESS {
 		return err
 	}
 	if err := api.CfgSet("log_group_home_dir", test0auxLogGroupHomeDir); err != api.DB_SUCCESS {
