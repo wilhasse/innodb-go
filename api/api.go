@@ -96,6 +96,12 @@ func Startup(format string) ErrCode {
 	}
 	dict.SetDataDir(dataHomeDir())
 	dict.DictBootstrap()
+	if err := trx.UndoStoreInit(dataHomeDir()); err != nil {
+		return DB_ERROR
+	}
+	if err := trx.UndoStoreRecover(); err != nil {
+		return DB_ERROR
+	}
 	if err := loadSchemaFromDict(); err != DB_SUCCESS {
 		return err
 	}
@@ -154,6 +160,7 @@ func Shutdown(_ ShutdownFlag) ErrCode {
 	_ = buf.FlushAll()
 	resetSchemaState()
 	log.Shutdown()
+	_ = trx.UndoStoreClose()
 	fil.DoublewriteShutdown()
 	closeSystemTablespace()
 	buf.SetDefaultPools(nil)

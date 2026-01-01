@@ -174,3 +174,10 @@
   - `ibuf` tracks buffered pages via bitmap state and merges entries on demand.
   - `row.Store` buffers non-unique secondary index inserts and merges on index reads.
   - `tests/ibuf_merge_test.go` and `ibuf/ibuf_test.go` cover buffering + merge paths.
+
+## IBGO-250: Persistent undo logs + rollback segments
+- C refs: `trx/trx0undo.c`
+- Go mapping:
+  - `trx.UndoStore` persists undo records to `ib_undo.log` and reloads them on startup.
+  - `trx.AppendUndoRecord` now appends to the undo store alongside in-memory logs.
+  - `tests/undo_persist_test.go` validates recovery of persisted undo records.

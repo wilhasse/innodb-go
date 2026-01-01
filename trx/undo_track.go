@@ -16,6 +16,7 @@ func AppendUndoRecord(trx *Trx, rec UndoRecord) {
 		log.Append(rec)
 	}
 	trx.UndoRecords = append(trx.UndoRecords, rec)
+	_ = UndoStoreAppend(rec)
 }
 
 func ensureUndoLog(trx *Trx, recType uint8) *UndoLog {
