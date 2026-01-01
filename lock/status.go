@@ -7,4 +7,5 @@ const (
 	LockGranted Status = iota
 	LockWait
 	LockDeadlock
+	LockWaitTimeout
 )

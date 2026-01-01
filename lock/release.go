@@ -25,6 +25,7 @@ func (sys *LockSys) ReleaseAll(tr *trx.Trx) {
 		return
 	}
 	list := make([]*Lock, 0, len(locks))
+	queues := make(map[*Queue]struct{})
 	for lock := range locks {
 		list = append(list, lock)
 	}
@@ -33,6 +34,7 @@ func (sys *LockSys) ReleaseAll(tr *trx.Trx) {
 		case LockTypeTable:
 			if queue := sys.tableHash[lock.Table]; queue != nil {
 				queue.Remove(lock)
+				queues[queue] = struct{}{}
 				if queue.First == nil {
 					delete(sys.tableHash, lock.Table)
 				}
@@ -40,6 +42,7 @@ func (sys *LockSys) ReleaseAll(tr *trx.Trx) {
 		case LockTypeRec:
 			if queue := sys.recordHash[lock.Rec]; queue != nil {
 				queue.Remove(lock)
+				queues[queue] = struct{}{}
 				if queue.First == nil {
 					delete(sys.recordHash, lock.Rec)
 				}
@@ -47,5 +50,8 @@ func (sys *LockSys) ReleaseAll(tr *trx.Trx) {
 		}
 	}
 	delete(sys.trxLocks, tr)
+	for queue := range queues {
+		sys.signalWaiters(queue)
+	}
 	sys.clearWaitEdges(tr)
 }

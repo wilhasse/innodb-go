@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"strings"
+	"time"
 
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/buf"
@@ -76,6 +77,10 @@ func Startup(format string) ErrCode {
 	trx.PurgeSysCreate()
 	trx.RsegVarInit()
 	lock.SysCreate(0)
+	var lockWait Ulint
+	if err := CfgGet("lock_wait_timeout", &lockWait); err == DB_SUCCESS {
+		lock.SetWaitTimeout(time.Duration(lockWait) * time.Second)
+	}
 	if !fil.SpaceCreate("system", 0, 0, fil.SpaceTablespace) {
 		return DB_ERROR
 	}

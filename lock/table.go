@@ -1,6 +1,10 @@
 package lock
 
-import "github.com/wilhasse/innodb-go/trx"
+import (
+	"time"
+
+	"github.com/wilhasse/innodb-go/trx"
+)
 
 // LockTable acquires a table lock in the global lock system.
 func LockTable(tr *trx.Trx, table string, mode Mode) (*Lock, Status) {
@@ -25,57 +29,97 @@ func (sys *LockSys) LockTable(tr *trx.Trx, table string, mode Mode) (*Lock, Stat
 	if sys == nil {
 		return nil, LockGranted
 	}
-	sys.mu.Lock()
-	defer sys.mu.Unlock()
-
-	queue := sys.tableHash[table]
-	if queue == nil {
-		queue = &Queue{}
-		sys.tableHash[table] = queue
+	timeout := waitTimeout()
+	deadline := time.Time{}
+	if timeout > 0 {
+		deadline = time.Now().Add(timeout)
 	}
 
-	var own *Lock
-	var blockers []*trx.Trx
-	for lock := queue.First; lock != nil; lock = lock.Next {
-		if lock.Trx == tr {
-			own = lock
-			continue
+	for {
+		sys.mu.Lock()
+		queue := sys.tableHash[table]
+		if queue == nil {
+			queue = &Queue{}
+			sys.tableHash[table] = queue
 		}
-		if !ModeCompatible(mode, lock.Mode) && lock.Trx != nil {
-			blockers = append(blockers, lock.Trx)
+		ownGranted, ownWaiting, blockers := sys.tableBlockers(queue, tr, mode)
+		if len(blockers) == 0 {
+			if ownWaiting != nil {
+				ownWaiting.Flags &^= FlagWait
+				if ModeStrongerOrEq(ownWaiting.Mode, mode) {
+					sys.clearWaitEdges(tr)
+					sys.mu.Unlock()
+					return ownWaiting, LockGranted
+				}
+				ownWaiting.Mode = mode
+				sys.clearWaitEdges(tr)
+				sys.mu.Unlock()
+				return ownWaiting, LockGranted
+			}
+			if ownGranted != nil {
+				ownGranted.Flags &^= FlagWait
+				if ModeStrongerOrEq(ownGranted.Mode, mode) {
+					sys.clearWaitEdges(tr)
+					sys.mu.Unlock()
+					return ownGranted, LockGranted
+				}
+				ownGranted.Mode = mode
+				sys.clearWaitEdges(tr)
+				sys.mu.Unlock()
+				return ownGranted, LockGranted
+			}
+			lock := &Lock{Type: LockTypeTable, Mode: mode, Trx: tr, Table: table}
+			queue.Append(lock)
+			sys.addLock(lock)
+			sys.clearWaitEdges(tr)
+			sys.mu.Unlock()
+			return lock, LockGranted
 		}
-	}
 
-	if len(blockers) > 0 {
+		sys.clearWaitEdges(tr)
 		for _, blocker := range blockers {
 			sys.addWaitEdge(tr, blocker)
 		}
 		if sys.deadlock(tr) {
 			sys.clearWaitEdges(tr)
+			sys.mu.Unlock()
 			return nil, LockDeadlock
 		}
-		waiter := &Lock{Type: LockTypeTable, Mode: mode, Trx: tr, Table: table, Flags: FlagWait}
-		queue.Append(waiter)
-		sys.addLock(waiter)
-		return waiter, LockWait
-	}
-
-	if own != nil {
-		own.Flags &^= FlagWait
-		if ModeStrongerOrEq(own.Mode, mode) {
+		if timeout <= 0 {
 			sys.clearWaitEdges(tr)
-			return own, LockGranted
+			sys.mu.Unlock()
+			return nil, LockWaitTimeout
 		}
-		own.Mode = mode
-		sys.clearWaitEdges(tr)
-		return own, LockGranted
-	}
+		waiter := ownWaiting
+		if waiter == nil {
+			waiter = &Lock{
+				Type:   LockTypeTable,
+				Mode:   mode,
+				Trx:    tr,
+				Table:  table,
+				Flags:  FlagWait,
+				WaitCh: make(chan struct{}, 1),
+			}
+			queue.Append(waiter)
+			sys.addLock(waiter)
+		} else {
+			waiter.Flags |= FlagWait
+			waiter.Mode = mode
+			if waiter.WaitCh == nil {
+				waiter.WaitCh = make(chan struct{}, 1)
+			}
+		}
+		waitCh := waiter.WaitCh
+		sys.mu.Unlock()
 
-	lock := &Lock{Type: LockTypeTable, Mode: mode, Trx: tr, Table: table}
-	queue.Append(lock)
-	sys.addLock(lock)
-	sys.clearWaitEdges(tr)
-	return lock, LockGranted
+		if !waitForSignal(waitCh, deadline) {
+			sys.mu.Lock()
+			sys.removeLockFromQueue(waiter)
+			sys.clearWaitEdges(tr)
+			sys.mu.Unlock()
+			return nil, LockWaitTimeout
+		}
+	}
 }
 
 // UnlockTable releases table locks held by the transaction.
@@ -98,7 +142,33 @@ func (sys *LockSys) UnlockTable(tr *trx.Trx, table string) {
 		}
 		lock = next
 	}
+	sys.signalWaiters(queue)
 	if queue.First == nil {
 		delete(sys.tableHash, table)
 	}
+}
+
+func (sys *LockSys) tableBlockers(queue *Queue, tr *trx.Trx, mode Mode) (*Lock, *Lock, []*trx.Trx) {
+	var ownGranted *Lock
+	var ownWaiting *Lock
+	var blockers []*trx.Trx
+	for lock := queue.First; lock != nil; lock = lock.Next {
+		if lock.Trx == tr {
+			if lock.Flags&FlagWait != 0 {
+				if ownWaiting == nil {
+					ownWaiting = lock
+				}
+			} else if ownGranted == nil {
+				ownGranted = lock
+			}
+			continue
+		}
+		if lock.Flags&FlagWait != 0 {
+			continue
+		}
+		if !ModeCompatible(mode, lock.Mode) && lock.Trx != nil {
+			blockers = append(blockers, lock.Trx)
+		}
+	}
+	return ownGranted, ownWaiting, blockers
 }

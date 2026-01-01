@@ -1,9 +1,12 @@
 package api
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestCommitReleasesLocks(t *testing.T) {
-	tableName := setupLockTable(t, "lock_commit_db")
+	tableName := setupLockTable(t, "lock_commit_db", 1)
 	defer func() { _ = Shutdown(ShutdownNormal) }()
 
 	trx1 := TrxBegin(IB_TRX_REPEATABLE_READ)
@@ -27,49 +30,39 @@ func TestCommitReleasesLocks(t *testing.T) {
 	if err := CursorOpenTable(tableName, trx2, &cur2); err != DB_SUCCESS {
 		t.Fatalf("CursorOpenTable trx2: %v", err)
 	}
-	if err := updateByKey(cur2, 1); err != DB_LOCK_WAIT {
-		t.Fatalf("CursorUpdateRow trx2=%v, want DB_LOCK_WAIT", err)
-	}
+	done := make(chan ErrCode, 1)
+	go func() {
+		done <- updateByKey(cur2, 1)
+	}()
+	time.Sleep(20 * time.Millisecond)
 
 	if err := TrxCommit(trx1); err != DB_SUCCESS {
 		t.Fatalf("TrxCommit trx1: %v", err)
 	}
-	if err := updateByKey(cur2, 1); err != DB_SUCCESS {
+	if err := waitErr(t, done, time.Second); err != DB_SUCCESS {
 		t.Fatalf("CursorUpdateRow after commit=%v, want DB_SUCCESS", err)
 	}
 	_ = TrxCommit(trx2)
 }
 
 func TestRollbackReleasesLocks(t *testing.T) {
-	tableName := setupLockTable(t, "lock_rollback_db")
+	tableName := setupLockTable(t, "lock_rollback_db", 1)
 	defer func() { _ = Shutdown(ShutdownNormal) }()
-
-	base := TrxBegin(IB_TRX_REPEATABLE_READ)
-	var baseCur *Cursor
-	if err := CursorOpenTable(tableName, base, &baseCur); err != DB_SUCCESS {
-		t.Fatalf("CursorOpenTable base: %v", err)
-	}
-	baseTpl := ClustReadTupleCreate(baseCur)
-	if baseTpl == nil {
-		t.Fatalf("ClustReadTupleCreate base returned nil")
-	}
-	if err := TupleWriteU32(baseTpl, 0, 1); err != DB_SUCCESS {
-		t.Fatalf("TupleWriteU32 base: %v", err)
-	}
-	if err := CursorInsertRow(baseCur, baseTpl); err != DB_SUCCESS {
-		t.Fatalf("CursorInsertRow base: %v", err)
-	}
-	if err := TrxCommit(base); err != DB_SUCCESS {
-		t.Fatalf("TrxCommit base: %v", err)
-	}
 
 	trx1 := TrxBegin(IB_TRX_REPEATABLE_READ)
 	var cur1 *Cursor
 	if err := CursorOpenTable(tableName, trx1, &cur1); err != DB_SUCCESS {
 		t.Fatalf("CursorOpenTable trx1: %v", err)
 	}
-	if err := updateByKey(cur1, 1); err != DB_SUCCESS {
-		t.Fatalf("CursorUpdateRow trx1: %v", err)
+	tpl1 := ClustReadTupleCreate(cur1)
+	if tpl1 == nil {
+		t.Fatalf("ClustReadTupleCreate trx1 returned nil")
+	}
+	if err := TupleWriteU32(tpl1, 0, 1); err != DB_SUCCESS {
+		t.Fatalf("TupleWriteU32 trx1: %v", err)
+	}
+	if err := CursorInsertRow(cur1, tpl1); err != DB_SUCCESS {
+		t.Fatalf("CursorInsertRow trx1: %v", err)
 	}
 
 	trx2 := TrxBegin(IB_TRX_REPEATABLE_READ)
@@ -77,16 +70,25 @@ func TestRollbackReleasesLocks(t *testing.T) {
 	if err := CursorOpenTable(tableName, trx2, &cur2); err != DB_SUCCESS {
 		t.Fatalf("CursorOpenTable trx2: %v", err)
 	}
-	if err := updateByKey(cur2, 1); err != DB_LOCK_WAIT {
-		t.Fatalf("CursorUpdateRow trx2=%v, want DB_LOCK_WAIT", err)
+	tpl2 := ClustReadTupleCreate(cur2)
+	if tpl2 == nil {
+		t.Fatalf("ClustReadTupleCreate trx2 returned nil")
 	}
+	if err := TupleWriteU32(tpl2, 0, 1); err != DB_SUCCESS {
+		t.Fatalf("TupleWriteU32 trx2: %v", err)
+	}
+	done := make(chan ErrCode, 1)
+	go func() {
+		done <- CursorInsertRow(cur2, tpl2)
+	}()
+	time.Sleep(20 * time.Millisecond)
 	if err := TrxRollback(trx1); err != DB_SUCCESS {
 		t.Fatalf("TrxRollback trx1: %v", err)
 	}
-	if err := updateByKey(cur2, 1); err != DB_SUCCESS {
-		t.Fatalf("CursorUpdateRow after rollback=%v, want DB_SUCCESS", err)
+	if err := waitErr(t, done, time.Second); err != DB_SUCCESS {
+		t.Fatalf("CursorInsertRow after rollback=%v, want DB_SUCCESS", err)
 	}
-	_ = TrxCommit(trx2)
+	_ = TrxRollback(trx2)
 }
 
 func updateByKey(cur *Cursor, key uint32) ErrCode {

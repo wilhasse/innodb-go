@@ -2,12 +2,16 @@ package lock
 
 import (
 	"testing"
+	"time"
 
 	"github.com/wilhasse/innodb-go/trx"
 )
 
 func TestLockRecConflict(t *testing.T) {
 	sys := NewLockSys()
+	prev := waitTimeout()
+	SetWaitTimeout(200 * time.Millisecond)
+	defer SetWaitTimeout(prev)
 	trx1 := &trx.Trx{}
 	trx2 := &trx.Trx{}
 	rec := RecordKey{Table: "t1", PageNo: 1, HeapNo: 10}
@@ -17,9 +21,16 @@ func TestLockRecConflict(t *testing.T) {
 		t.Fatalf("expected record lock granted")
 	}
 
-	lock2, status := sys.LockRec(trx2, rec, ModeX)
-	if status != LockWait || lock2 == nil || lock2.Flags&FlagWait == 0 {
-		t.Fatalf("expected conflicting record lock to wait")
+	done := make(chan Status, 1)
+	go func() {
+		_, status := sys.LockRec(trx2, rec, ModeX)
+		done <- status
+	}()
+	time.Sleep(20 * time.Millisecond)
+	sys.UnlockRec(trx1, rec)
+
+	if status := waitStatus(t, done, time.Second); status != LockGranted {
+		t.Fatalf("expected lock granted after release, got %v", status)
 	}
 }
 
@@ -59,5 +70,33 @@ func TestUnlockRecClearsBits(t *testing.T) {
 	sys.UnlockRec(trx1, rec2)
 	if queue := sys.RecordQueue(rec2); queue != nil && queue.First != nil {
 		t.Fatalf("expected queue to be empty after clearing bits")
+	}
+}
+
+func TestLockRecTimeout(t *testing.T) {
+	sys := NewLockSys()
+	prev := waitTimeout()
+	SetWaitTimeout(50 * time.Millisecond)
+	defer SetWaitTimeout(prev)
+	trx1 := &trx.Trx{}
+	trx2 := &trx.Trx{}
+	rec := RecordKey{Table: "t1", PageNo: 1, HeapNo: 10}
+
+	if _, status := sys.LockRec(trx1, rec, ModeX); status != LockGranted {
+		t.Fatalf("expected first lock granted")
+	}
+	if _, status := sys.LockRec(trx2, rec, ModeX); status != LockWaitTimeout {
+		t.Fatalf("expected lock wait timeout, got %v", status)
+	}
+}
+
+func waitStatus(t *testing.T, ch <-chan Status, timeout time.Duration) Status {
+	t.Helper()
+	select {
+	case status := <-ch:
+		return status
+	case <-time.After(timeout):
+		t.Fatalf("timeout waiting for lock status")
+		return LockWaitTimeout
 	}
 }

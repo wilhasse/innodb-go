@@ -21,6 +21,7 @@ type Lock struct {
 	Bits   []bool
 	Mode   Mode
 	Flags  Flags
+	WaitCh chan struct{}
 	Trx    *trx.Trx
 	Table  string
 	Rec    RecordPageKey

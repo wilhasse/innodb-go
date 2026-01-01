@@ -2,6 +2,7 @@ package lock
 
 import (
 	"testing"
+	"time"
 
 	"github.com/wilhasse/innodb-go/trx"
 )
@@ -26,18 +27,23 @@ func TestLockTableGrantAndUnlock(t *testing.T) {
 
 func TestLockTableConflict(t *testing.T) {
 	sys := NewLockSys()
+	prev := waitTimeout()
+	SetWaitTimeout(200 * time.Millisecond)
+	defer SetWaitTimeout(prev)
 	trx1 := &trx.Trx{}
 	trx2 := &trx.Trx{}
 	if _, status := sys.LockTable(trx1, "t1", ModeS); status != LockGranted {
 		t.Fatalf("expected first lock granted")
 	}
-	lock, status := sys.LockTable(trx2, "t1", ModeX)
-	if status != LockWait || lock == nil || lock.Flags&FlagWait == 0 {
-		t.Fatalf("expected conflicting lock to wait")
-	}
-	queue := sys.TableQueue("t1")
-	if queue == nil || queue.First == nil || queue.Last != lock {
-		t.Fatalf("expected waiter appended to queue")
+	done := make(chan Status, 1)
+	go func() {
+		_, status := sys.LockTable(trx2, "t1", ModeX)
+		done <- status
+	}()
+	time.Sleep(20 * time.Millisecond)
+	sys.UnlockTable(trx1, "t1")
+	if status := waitStatus(t, done, time.Second); status != LockGranted {
+		t.Fatalf("expected lock granted after release, got %v", status)
 	}
 }
 
@@ -54,5 +60,21 @@ func TestLockTableUpgrade(t *testing.T) {
 	}
 	if lock.Mode != ModeIX {
 		t.Fatalf("expected mode upgrade to IX")
+	}
+}
+
+func TestLockTableTimeout(t *testing.T) {
+	sys := NewLockSys()
+	prev := waitTimeout()
+	SetWaitTimeout(50 * time.Millisecond)
+	defer SetWaitTimeout(prev)
+	trx1 := &trx.Trx{}
+	trx2 := &trx.Trx{}
+
+	if _, status := sys.LockTable(trx1, "t1", ModeS); status != LockGranted {
+		t.Fatalf("expected first lock granted")
+	}
+	if _, status := sys.LockTable(trx2, "t1", ModeX); status != LockWaitTimeout {
+		t.Fatalf("expected lock wait timeout, got %v", status)
 	}
 }

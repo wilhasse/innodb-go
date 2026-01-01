@@ -40,6 +40,8 @@ func lockStatusToErr(status lock.Status) ErrCode {
 		return DB_LOCK_WAIT
 	case lock.LockDeadlock:
 		return DB_DEADLOCK
+	case lock.LockWaitTimeout:
+		return DB_LOCK_WAIT_TIMEOUT
 	default:
 		return DB_ERROR
 	}

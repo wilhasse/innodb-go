@@ -19,9 +19,6 @@ func (sys *LockSys) clearWaitEdges(waiter *trx.Trx) {
 		return
 	}
 	delete(sys.waitFor, waiter)
-	for _, edges := range sys.waitFor {
-		delete(edges, waiter)
-	}
 }
 
 func (sys *LockSys) deadlock(waiter *trx.Trx) bool {

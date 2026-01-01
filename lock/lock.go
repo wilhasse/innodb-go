@@ -92,6 +92,7 @@ func (sys *LockSys) Release(lock *Lock) {
 	}
 	queue.Remove(lock)
 	sys.removeLock(lock)
+	sys.signalWaiters(queue)
 }
 
 // TableQueue returns the queue for a table.
