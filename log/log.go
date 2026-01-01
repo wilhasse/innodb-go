@@ -1,6 +1,10 @@
 package log
 
-import "sync"
+import (
+	"sync"
+
+	ibos "github.com/wilhasse/innodb-go/os"
+)
 
 // Entry holds a log record.
 type Entry struct {
@@ -15,9 +19,14 @@ type Log struct {
 	entries   []Entry
 	lsn       uint64
 	flushed   uint64
+	startLSN  uint64
+	checkpoint uint64
 	open      bool
 	openStart uint64
 	pending   []byte
+	file      ibos.File
+	header  logHeader
+	initErr error
 }
 
 // System is the global redo log.
@@ -26,6 +35,29 @@ var System *Log
 // Init initializes the global log system.
 func Init() {
 	System = &Log{}
+	cfg, ok := currentConfig()
+	if !ok || !cfg.Enabled {
+		return
+	}
+	file, hdr, err := openLogFile(cfg)
+	if err != nil {
+		System.initErr = err
+		return
+	}
+	System.file = file
+	System.header = hdr
+	System.startLSN = hdr.StartLSN
+	System.checkpoint = hdr.CheckpointLSN
+	System.lsn = hdr.CurrentLSN
+	System.flushed = hdr.FlushedLSN
+}
+
+// InitErr returns the last initialization error.
+func InitErr() error {
+	if System == nil {
+		return nil
+	}
+	return System.initErr
 }
 
 // Acquire locks the global log.
