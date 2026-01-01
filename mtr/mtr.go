@@ -1,6 +1,9 @@
 package mtr
 
-import "github.com/wilhasse/innodb-go/dyn"
+import (
+	"github.com/wilhasse/innodb-go/dyn"
+	"github.com/wilhasse/innodb-go/log"
+)
 
 // Start initializes a mini-transaction in the provided buffer.
 func Start(m *Mtr) *Mtr {
@@ -25,6 +28,7 @@ func Commit(m *Mtr) {
 		return
 	}
 	m.State = StateCommitting
+	mtrWriteLog(m)
 	if m.Log != nil {
 		m.Log.Free()
 		m.Log = nil
@@ -33,6 +37,41 @@ func Commit(m *Mtr) {
 	m.Modifications = false
 	m.NLogRecs = 0
 	m.State = StateCommitted
+}
+
+func mtrWriteLog(m *Mtr) {
+	if m == nil || m.Log == nil {
+		return
+	}
+	if m.LogMode == LogNone || !m.Modifications || m.NLogRecs == 0 {
+		return
+	}
+	if m.NLogRecs > 1 {
+		MlogCatenateUlint(m, MlogMultiRecEnd, Mlog1Byte)
+	} else if block := m.Log.FirstBlock(); block != nil && block.Used() > 0 {
+		block.Data()[0] |= MlogSingleRecFlag
+	}
+	dataSize := m.Log.DataSize()
+	if dataSize == 0 {
+		return
+	}
+	log.ReserveAndOpen(dataSize)
+	if m.LogMode == LogAll || m.LogMode == LogShortInserts {
+		for block := m.Log.FirstBlock(); block != nil; block = m.Log.NextBlock(block) {
+			data := block.Data()
+			used := block.Used()
+			if used > len(data) {
+				used = len(data)
+			}
+			if used > 0 {
+				log.WriteLow(data[:used])
+			}
+		}
+	}
+	end := log.Close()
+	if m.LogMode == LogAll {
+		log.FlushUpTo(end)
+	}
 }
 
 // GetLogMode returns the current logging mode.
