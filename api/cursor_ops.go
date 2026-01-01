@@ -6,6 +6,7 @@ import (
 
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
+	"github.com/wilhasse/innodb-go/lock"
 	"github.com/wilhasse/innodb-go/rec"
 	"github.com/wilhasse/innodb-go/row"
 )
@@ -54,6 +55,12 @@ func CursorUpdateRow(crsr *Cursor, oldTpl, newTpl *data.Tuple) ErrCode {
 	target := findRowForUpdate(crsr, oldTpl)
 	if target == nil {
 		return DB_RECORD_NOT_FOUND
+	}
+	if err := lockTableForDML(crsr); err != DB_SUCCESS {
+		return err
+	}
+	if err := lockRecordForDML(crsr, target, lock.ModeX); err != DB_SUCCESS {
+		return err
 	}
 	oldKey := primaryKeyBytes(store, target)
 	before := encodeUndoImage(target)
@@ -159,6 +166,12 @@ func CursorDeleteRow(crsr *Cursor) ErrCode {
 		if !ok {
 			return DB_RECORD_NOT_FOUND
 		}
+	}
+	if err := lockTableForDML(crsr); err != DB_SUCCESS {
+		return err
+	}
+	if err := lockRecordForDML(crsr, row, lock.ModeX); err != DB_SUCCESS {
+		return err
 	}
 	if crsr.treeCur != nil && crsr.treeCur.Valid() {
 		crsr.lastKey = crsr.treeCur.Key()

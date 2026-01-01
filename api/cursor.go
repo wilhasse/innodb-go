@@ -8,6 +8,7 @@ import (
 
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
+	"github.com/wilhasse/innodb-go/lock"
 	"github.com/wilhasse/innodb-go/read"
 	"github.com/wilhasse/innodb-go/rec"
 	"github.com/wilhasse/innodb-go/row"
@@ -124,6 +125,12 @@ func CursorInsertRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 	}
 	encoded, err := encodeDecodeTuple(tpl)
 	if err != DB_SUCCESS {
+		return err
+	}
+	if err := lockTableForDML(crsr); err != DB_SUCCESS {
+		return err
+	}
+	if err := lockRecordForDML(crsr, encoded, lock.ModeX); err != DB_SUCCESS {
 		return err
 	}
 	if err := crsr.Table.Store.Insert(encoded); err != nil {

@@ -10,6 +10,7 @@ import (
 	"github.com/wilhasse/innodb-go/fil"
 	"github.com/wilhasse/innodb-go/fsp"
 	"github.com/wilhasse/innodb-go/log"
+	"github.com/wilhasse/innodb-go/lock"
 	"github.com/wilhasse/innodb-go/page"
 	"github.com/wilhasse/innodb-go/trx"
 )
@@ -69,6 +70,7 @@ func Startup(format string) ErrCode {
 	trx.TrxSysVarInit()
 	trx.PurgeVarInit()
 	trx.RsegVarInit()
+	lock.SysCreate(0)
 	if !fil.SpaceCreate("system", 0, 0, fil.SpaceTablespace) {
 		return DB_ERROR
 	}
@@ -110,6 +112,7 @@ func Shutdown(_ ShutdownFlag) ErrCode {
 	log.Shutdown()
 	buf.SetDefaultPool(nil)
 	dict.DictClose()
+	lock.SysClose()
 	fil.VarInit()
 	started = false
 	activeDBFormat = ""
