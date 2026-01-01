@@ -43,6 +43,11 @@ func DictPersist() error {
 	if DictSys == nil {
 		return errors.New("dict: not initialized")
 	}
+	if sysPersister != nil {
+		if err := sysPersister.PersistSysRows(DictSys.SysRows); err != nil {
+			return err
+		}
+	}
 	DictSys.mu.Lock()
 	payload := buildPersistPayload()
 	DictSys.mu.Unlock()

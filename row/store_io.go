@@ -208,6 +208,11 @@ func (store *Store) loadFromPages() error {
 	return nil
 }
 
+// LoadFromPages populates the store from its page tree.
+func (store *Store) LoadFromPages() error {
+	return store.loadFromPages()
+}
+
 func parseLogEntries(buf []byte) []logEntry {
 	entries := make([]logEntry, 0)
 	for off := 0; off+9 <= len(buf); {

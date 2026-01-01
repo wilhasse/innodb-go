@@ -13,6 +13,33 @@ type SysRows struct {
 // DictBootstrap initializes the dictionary and system table rows.
 func DictBootstrap() {
 	DictInit()
+	if sysPersister != nil {
+		DictSys.mu.Lock()
+		if payload, err := loadPersisted(); err == nil && payload != nil {
+			DictSys.Header = payload.Header
+		} else {
+			dictHdrCreate()
+		}
+		createSysTables()
+		DictSys.mu.Unlock()
+		rows, err := sysPersister.LoadSysRows()
+		if err == nil && !sysRowsEmpty(rows) {
+			DictSys.mu.Lock()
+			DictSys.SysRows = rows
+			dedupeSysRows()
+			updateHeaderFromSysRows()
+			DictSys.RowID = dulintAdd(dulintAlignUp(DictSys.Header.RowID, DictHdrRowIDWriteMargin), DictHdrRowIDWriteMargin)
+			DictSys.mu.Unlock()
+			rebuildFromSysRows()
+			return
+		}
+		DictSys.mu.Lock()
+		DictSys.RowID = dulintAdd(dulintAlignUp(DictSys.Header.RowID, DictHdrRowIDWriteMargin), DictHdrRowIDWriteMargin)
+		initSysRows()
+		DictSys.mu.Unlock()
+		_ = sysPersister.PersistSysRows(DictSys.SysRows)
+		return
+	}
 	if payload, err := loadPersisted(); err == nil && payload != nil {
 		DictSys.mu.Lock()
 		DictSys.Header = payload.Header
@@ -59,4 +86,35 @@ func initSysRows() {
 		}
 	}
 	dedupeSysRows()
+}
+
+func sysRowsEmpty(rows SysRows) bool {
+	return len(rows.Tables) == 0 &&
+		len(rows.Columns) == 0 &&
+		len(rows.Indexes) == 0 &&
+		len(rows.Fields) == 0
+}
+
+func updateHeaderFromSysRows() {
+	if DictSys == nil {
+		return
+	}
+	var maxTableID uint64
+	for _, row := range DictSys.SysRows.Tables {
+		if id, ok := tupleFieldUint64(row, 1); ok && id > maxTableID {
+			maxTableID = id
+		}
+	}
+	if maxTableID > 0 {
+		DictSys.Header.TableID = DulintFromUint64(maxTableID)
+	}
+	var maxIndexID uint64
+	for _, row := range DictSys.SysRows.Indexes {
+		if id, ok := tupleFieldUint64(row, 1); ok && id > maxIndexID {
+			maxIndexID = id
+		}
+	}
+	if maxIndexID > 0 {
+		DictSys.Header.IndexID = DulintFromUint64(maxIndexID)
+	}
 }

@@ -423,7 +423,10 @@ func loadSchemaFromDict() ErrCode {
 	databases = map[string]*Database{}
 	var maxID uint64
 	for _, dtable := range dict.DictSys.Tables {
-		if dtable == nil || strings.HasPrefix(strings.ToUpper(dtable.Name), "SYS_") {
+		if dtable == nil {
+			continue
+		}
+		if strings.HasPrefix(strings.ToUpper(dtable.Name), "SYS_") && !strings.Contains(dtable.Name, "/") {
 			continue
 		}
 		dbName, tableName := splitTableName(dtable.Name)

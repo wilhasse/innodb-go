@@ -9,7 +9,7 @@ rough indicator and are taken from `wc -l` over each Go package directory.
 | Subsystem | C Lines (approx) | Go Lines (approx) | Status | Notes |
 | --- | --- | --- | --- | --- |
 | btr (B-tree) | ~7,000 | 3,794 | Partial | Core tree ops, splits, cursors, trace harness; still in-memory and simplified. |
-| dict (dictionary) | ~4,000 | 1,380 | Partial | SYS_* rows persisted to `ib_dict.sys` and reloaded on startup (not B-tree stored). |
+| dict (dictionary) | ~4,000 | 1,380 | Partial | SYS_* rows persisted in system tablespace page trees (BTR); file fallback only for bare dict bootstrap. |
 | page (page format) | ~3,000 | 660 | Partial | Page headers + record list basics only. |
 | fil (files) | ~3,500 | 460 | Minimal | Tablespace registry with attached files; page read/write helpers auto-extend size. |
 | buf (buffer pool) | ~8,000 | 1,120 | Minimal | Simplified pool + LRU; fetch/flush uses fil page IO. |

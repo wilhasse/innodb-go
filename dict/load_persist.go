@@ -70,7 +70,7 @@ func rebuildFromSysRows() {
 	tableByID := make(map[uint64]*Table)
 	for _, row := range DictSys.SysRows.Tables {
 		name, ok := tupleFieldString(row, 0)
-		if !ok || strings.HasPrefix(strings.ToUpper(name), "SYS_") {
+		if !ok || (strings.HasPrefix(strings.ToUpper(name), "SYS_") && !strings.Contains(name, "/")) {
 			continue
 		}
 		id, ok := tupleFieldUint64(row, 1)

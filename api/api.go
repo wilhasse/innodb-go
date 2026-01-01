@@ -101,6 +101,7 @@ func Startup(format string) ErrCode {
 		}
 	}
 	dict.SetDataDir(dataHomeDir())
+	dict.SetSysPersister(&sysTablePersister{})
 	dict.DictBootstrap()
 	if err := trx.UndoStoreInit(dataHomeDir()); err != nil {
 		return DB_ERROR
