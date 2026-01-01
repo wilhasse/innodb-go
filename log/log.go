@@ -21,6 +21,7 @@ type Log struct {
 	flushed   uint64
 	startLSN  uint64
 	checkpoint uint64
+	fileSize uint64
 	open      bool
 	openStart uint64
 	pending   []byte
@@ -91,6 +92,7 @@ func ReserveAndWriteFast(data []byte) (endLSN uint64, startLSN uint64) {
 		Data:     append([]byte(nil), data...),
 	})
 	System.lsn = end
+	System.writeRecord(start, data)
 	return end, start
 }
 
@@ -137,6 +139,7 @@ func Close() uint64 {
 		Data:     append([]byte(nil), System.pending...),
 	})
 	System.lsn = end
+	System.writeRecord(System.openStart, System.pending)
 	System.open = false
 	System.pending = nil
 	return end
