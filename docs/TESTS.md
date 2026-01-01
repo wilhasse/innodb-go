@@ -37,6 +37,15 @@ Environment overrides:
 - On Windows, use the CMake/VS build flow and set `PATH` instead of
   `LD_LIBRARY_PATH`.
 - Recovery coverage includes restart scan of redo logs in `api/recovery_test.go`.
+- MVCC/rollback coverage lives in `go test ./api` (read views, savepoints, purge).
+
+## MVCC Test Coverage
+
+The API test suite now exercises:
+
+- consistent read visibility for insert/update/delete
+- rollback (full + savepoint)
+- purge when read views close
 
 ## Test Comparison (Post-IBGO-195)
 

@@ -15,26 +15,24 @@ rough indicator and are taken from `wc -l` over each Go package directory.
 | buf (buffer pool) | ~8,000 | 1,120 | Minimal | Simplified pool + LRU; fetch/flush uses fil page IO. |
 | log (redo log) | ~3,000 | 900 | Partial | File-backed header + append-only records; checkpoint LSN persisted; recovery scan populates recv hash (LSN-only apply). |
 | lock (locking) | ~5,700 | 352 | Minimal | No row locks, no deadlock detection. |
-| trx (transactions) | ~4,500 | 1,273 | Minimal | IDs + scaffolding only, no real isolation or rollback. |
-| row (row ops) | ~7,000 | 1,900 | Partial | Basic row ops + BTR integration; row-store log replay on attach. |
-| read (read views) | ~500 | 194 | Minimal | No MVCC snapshots. |
+| trx (transactions) | ~4,500 | 1,273 | Partial | Undo records + rollback/savepoints; read view assignment; no lock-based isolation. |
+| row (row ops) | ~7,000 | 1,900 | Partial | Basic row ops + BTR integration; MVCC version chains; row-store log replay on attach. |
+| read (read views) | ~500 | 194 | Partial | Read view snapshots + visibility checks in cursors. |
 | rem (record mgr) | ~2,000 | 378 | Partial | Basic record format helpers only. |
 | rec | ~2,000 | 620 | Partial | Record encoding/decoding, headers, and comparison helpers. |
-| undo | ~2,000 | 0 | Missing | Not implemented. |
-| purge | ~1,500 | 0 | Missing | Not implemented. |
+| undo | ~2,000 | 0 | Partial | In-memory undo records + payloads live in trx/api (no separate package). |
+| purge | ~1,500 | 0 | Minimal | Purge trims MVCC versions when views close; no background purge. |
 
 ## Missing Core Features
 
 1) MVCC (Multi-Version Concurrency Control)
-- No undo logs for rollback
-- No read views for snapshot isolation
-- No version chains on records
-- No purge of old versions
+- In-memory undo records + version chains only; no persistent undo logs
+- Read views exist but isolation semantics are minimal
+- Purge only trims history when views close (no background purge)
 
 2) Transaction System
-- No real transaction isolation (READ UNCOMMITTED only)
-- No rollback capability
-- No savepoints
+- No real transaction isolation (lock-free; MVCC only)
+- Rollback + savepoints are in-memory only
 - No distributed transaction support (XA)
 
 3) Locking
@@ -104,9 +102,11 @@ The Go port should be able to:
 - Create .ibd tablespace files
 - Handle page splits
 - Persist redo log headers and scan log records on startup
+- Roll back transactions and savepoints (in-memory)
+- Provide basic MVCC read views for inserts/updates/deletes (in-memory)
+- Purge MVCC history when no read views remain
 
 It cannot:
 - Survive a crash (no recovery)
 - Handle concurrent transactions
-- Rollback failed transactions
-- Provide isolation between readers/writers
+- Provide full isolation between readers/writers
