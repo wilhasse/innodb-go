@@ -34,6 +34,7 @@ func TrxCommit(ibTrx *trx.Trx) ErrCode {
 	}
 	trx.TrxCommit(ibTrx)
 	clearSchemaLock(ibTrx)
+	purgeIfNeeded()
 	return DB_SUCCESS
 }
 
@@ -45,6 +46,7 @@ func TrxRollback(ibTrx *trx.Trx) ErrCode {
 	undoErr := rollbackUndoRecords(ibTrx)
 	trx.TrxRollback(ibTrx)
 	clearSchemaLock(ibTrx)
+	purgeIfNeeded()
 	if undoErr != nil {
 		return DB_ERROR
 	}
