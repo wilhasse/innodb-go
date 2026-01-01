@@ -43,6 +43,7 @@ func TrxCommit(trx *Trx) {
 	if trx == nil || trx.State != TrxActive {
 		return
 	}
+	TrxCloseReadView(trx)
 	trx.State = TrxCommitted
 	trx.UndoLog = nil
 	trx.UndoRecords = nil
@@ -58,6 +59,7 @@ func TrxRollback(trx *Trx) {
 	if trx == nil || trx.State != TrxActive {
 		return
 	}
+	TrxCloseReadView(trx)
 	Rollback(trx)
 	trx.UndoRecords = nil
 	trx.UndoNo = 0

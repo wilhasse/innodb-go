@@ -1,6 +1,10 @@
 package trx
 
-import "time"
+import (
+	"time"
+
+	"github.com/wilhasse/innodb-go/read"
+)
 
 // UndoAction represents a rollback handler.
 type UndoAction func()
@@ -17,15 +21,16 @@ const (
 
 // Trx holds transaction state for rollback.
 type Trx struct {
-	ID         uint64
-	State      TrxState
-	StartTime  time.Time
-	UndoLog    []UndoAction
+	ID          uint64
+	State       TrxState
+	StartTime   time.Time
+	ReadView    *read.ReadView
+	UndoLog     []UndoAction
 	UndoRecords []UndoRecord
-	UndoNo     uint64
-	InsertUndo *UndoLog
-	UpdateUndo *UndoLog
-	Savepoints []Savepoint
+	UndoNo      uint64
+	InsertUndo  *UndoLog
+	UpdateUndo  *UndoLog
+	Savepoints  []Savepoint
 }
 
 // Savepoint tracks the undo log position.

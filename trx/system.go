@@ -1,6 +1,10 @@
 package trx
 
-import stdsync "sync"
+import (
+	stdsync "sync"
+
+	"github.com/wilhasse/innodb-go/read"
+)
 
 // TrxSystem holds global transaction system state.
 type TrxSystem struct {
@@ -9,6 +13,7 @@ type TrxSystem struct {
 	NextID      uint64
 	Active      []*Trx
 	Rsegs       []*RollbackSegment
+	ReadViews   *read.ViewList
 }
 
 // DoublewriteBuffer tracks the doublewrite buffer ranges.
@@ -38,6 +43,7 @@ func TrxSysInit() {
 	TrxSys = &TrxSystem{
 		Initialized: true,
 		NextID:      1,
+		ReadViews:   &read.ViewList{},
 	}
 }
 

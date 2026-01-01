@@ -50,7 +50,7 @@ type Cursor struct {
 }
 
 // CursorOpenTable opens a cursor on a table.
-func CursorOpenTable(name string, trx *trx.Trx, out **Cursor) ErrCode {
+func CursorOpenTable(name string, ibTrx *trx.Trx, out **Cursor) ErrCode {
 	if out == nil {
 		return DB_ERROR
 	}
@@ -62,9 +62,12 @@ func CursorOpenTable(name string, trx *trx.Trx, out **Cursor) ErrCode {
 	if table.Store != nil {
 		tree = table.Store.Tree
 	}
-	cursor := &Cursor{Table: table, Tree: tree, Trx: trx, MatchMode: IB_CLOSEST_MATCH}
+	cursor := &Cursor{Table: table, Tree: tree, Trx: ibTrx, MatchMode: IB_CLOSEST_MATCH}
 	if tree != nil {
 		cursor.pcur = btr.NewPcur(tree)
+	}
+	if ibTrx != nil {
+		trx.TrxAssignReadView(ibTrx)
 	}
 	*out = cursor
 	return DB_SUCCESS
@@ -84,11 +87,14 @@ func CursorLock(_ *Cursor, _ LockMode) ErrCode {
 }
 
 // CursorAttachTrx binds a transaction to a cursor.
-func CursorAttachTrx(crsr *Cursor, trx *trx.Trx) ErrCode {
+func CursorAttachTrx(crsr *Cursor, ibTrx *trx.Trx) ErrCode {
 	if crsr == nil {
 		return DB_ERROR
 	}
-	crsr.Trx = trx
+	crsr.Trx = ibTrx
+	if ibTrx != nil {
+		trx.TrxAssignReadView(ibTrx)
+	}
 	return DB_SUCCESS
 }
 
