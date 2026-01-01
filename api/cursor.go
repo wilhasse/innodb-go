@@ -130,6 +130,7 @@ func CursorInsertRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 		return DB_ERROR
 	}
 	recordUndoInsert(crsr, encoded)
+	recordRowVersionForKey(crsr, nil, encoded)
 	return DB_SUCCESS
 }
 
@@ -218,6 +219,17 @@ func CursorReadRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 	}
 	if crsr.treeCur == nil || !crsr.treeCur.Valid() {
 		return DB_RECORD_NOT_FOUND
+	}
+	if crsr.Trx != nil && crsr.Trx.ReadView != nil && crsr.Table.Store != nil {
+		if key := crsr.treeCur.Key(); len(key) > 0 {
+			if visible, ok := crsr.Table.Store.VersionForView(key, crsr.Trx.ReadView); ok {
+				if visible == nil {
+					return DB_RECORD_NOT_FOUND
+				}
+				copyTuple(tpl, visible)
+				return DB_SUCCESS
+			}
+		}
 	}
 	value := crsr.treeCur.Value()
 	if len(value) == 0 {

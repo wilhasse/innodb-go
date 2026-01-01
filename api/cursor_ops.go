@@ -55,6 +55,7 @@ func CursorUpdateRow(crsr *Cursor, oldTpl, newTpl *data.Tuple) ErrCode {
 	if target == nil {
 		return DB_RECORD_NOT_FOUND
 	}
+	oldKey := primaryKeyBytes(store, target)
 	before := encodeUndoImage(target)
 	encoded, err := encodeDecodeTuple(newTpl)
 	if err != DB_SUCCESS {
@@ -70,6 +71,11 @@ func CursorUpdateRow(crsr *Cursor, oldTpl, newTpl *data.Tuple) ErrCode {
 		return DB_ERROR
 	}
 	recordUndoUpdate(crsr, encoded, before)
+	newKey := primaryKeyBytes(store, encoded)
+	if len(oldKey) > 0 && len(newKey) > 0 && !bytes.Equal(oldKey, newKey) {
+		recordRowVersionForKey(crsr, oldKey, nil)
+	}
+	recordRowVersionForKey(crsr, newKey, encoded)
 	crsr.treeCur = nil
 	if crsr.pcur != nil {
 		crsr.pcur.Init()
@@ -158,10 +164,12 @@ func CursorDeleteRow(crsr *Cursor) ErrCode {
 		crsr.lastKey = crsr.treeCur.Key()
 	}
 	before := encodeUndoImage(row)
+	deleteKey := primaryKeyBytes(crsr.Table.Store, row)
 	if !crsr.Table.Store.RemoveTuple(row) {
 		return DB_RECORD_NOT_FOUND
 	}
 	recordUndoDelete(crsr, row, before)
+	recordRowVersionForKey(crsr, deleteKey, nil)
 	crsr.treeCur = nil
 	return DB_SUCCESS
 }

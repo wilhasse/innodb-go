@@ -102,6 +102,7 @@ func (store *Store) ensureIndex() {
 	if store.rowsByID == nil || store.idByRow == nil || store.Tree == nil {
 		store.rebuildIndex()
 	}
+	store.ensureVersions()
 }
 
 func (store *Store) rebuildIndex() {
@@ -111,6 +112,7 @@ func (store *Store) rebuildIndex() {
 	store.Tree = btr.NewTree(storeTreeOrder, CompareKeys)
 	store.rowsByID = make(map[uint64]*data.Tuple)
 	store.idByRow = make(map[*data.Tuple]uint64)
+	store.versions = make(map[string]*VersionedRow)
 	store.nextRowID = 1
 	for _, row := range store.Rows {
 		if row == nil {
@@ -122,6 +124,27 @@ func (store *Store) rebuildIndex() {
 		store.idByRow[row] = id
 		key := store.keyForInsert(row, id)
 		store.Tree.Insert(key, encodeRowValue(id, row))
+		if len(key) > 0 {
+			store.versions[string(key)] = NewVersionedRow(0, row)
+		}
+	}
+}
+
+// ensureVersions assumes store.mu is held.
+func (store *Store) ensureVersions() {
+	if store == nil || store.versions != nil {
+		return
+	}
+	store.versions = make(map[string]*VersionedRow)
+	for id, row := range store.rowsByID {
+		if row == nil {
+			continue
+		}
+		key := store.keyForInsert(row, id)
+		if len(key) == 0 {
+			continue
+		}
+		store.versions[string(key)] = NewVersionedRow(0, row)
 	}
 }
 

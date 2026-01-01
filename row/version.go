@@ -1,6 +1,9 @@
 package row
 
-import "github.com/wilhasse/innodb-go/data"
+import (
+	"github.com/wilhasse/innodb-go/data"
+	"github.com/wilhasse/innodb-go/read"
+)
 
 // RowVersion stores a tuple version tagged with a transaction id.
 type RowVersion struct {
@@ -16,7 +19,7 @@ type VersionedRow struct {
 // NewVersionedRow creates a versioned row with an initial version.
 func NewVersionedRow(trxID uint64, tuple *data.Tuple) *VersionedRow {
 	vr := &VersionedRow{}
-	if tuple != nil {
+	if tuple != nil || trxID != 0 {
 		vr.Versions = append(vr.Versions, RowVersion{TrxID: trxID, Tuple: tuple})
 	}
 	return vr
@@ -24,7 +27,10 @@ func NewVersionedRow(trxID uint64, tuple *data.Tuple) *VersionedRow {
 
 // AddVersion appends a new row version.
 func (vr *VersionedRow) AddVersion(trxID uint64, tuple *data.Tuple) {
-	if vr == nil || tuple == nil {
+	if vr == nil {
+		return
+	}
+	if tuple == nil && trxID == 0 {
 		return
 	}
 	vr.Versions = append(vr.Versions, RowVersion{TrxID: trxID, Tuple: tuple})
@@ -52,4 +58,21 @@ func (vr *VersionedRow) VersionFor(trxID uint64) *data.Tuple {
 		}
 	}
 	return best
+}
+
+// VersionForView returns the latest version visible to a read view.
+func (vr *VersionedRow) VersionForView(view *read.ReadView) *data.Tuple {
+	if vr == nil {
+		return nil
+	}
+	if view == nil {
+		return vr.Current()
+	}
+	for i := len(vr.Versions) - 1; i >= 0; i-- {
+		v := vr.Versions[i]
+		if view.Sees(v.TrxID) {
+			return v.Tuple
+		}
+	}
+	return nil
 }

@@ -21,6 +21,7 @@ type Store struct {
 	PrimaryKeyFields   []int
 	PrimaryKeyPrefixes []int
 	Tree               *btr.Tree
+	versions           map[string]*VersionedRow
 	file               ibos.File
 	filePath           string
 	fileOffset         int64
