@@ -44,15 +44,16 @@ type PoolStats struct {
 
 // Pool is a simplified buffer pool with LRU eviction.
 type Pool struct {
-	mu       sync.Mutex
-	capacity int
-	pageSize int
-	pages    map[PageID]*Page
-	lru      *LRU
-	flush    *list.List
-	hits     uint64
-	misses   uint64
-	evicts   uint64
+	mu        sync.Mutex
+	capacity  int
+	pageSize  int
+	pages     map[PageID]*Page
+	lru       *LRU
+	flush     *list.List
+	readAhead *ReadAhead
+	hits      uint64
+	misses    uint64
+	evicts    uint64
 }
 
 // NewPool constructs a buffer pool with the given capacity and page size.
@@ -74,38 +75,7 @@ func NewPool(capacity int, pageSize int) *Pool {
 
 // Fetch returns a pinned page frame, loading it if needed.
 func (p *Pool) Fetch(space, pageNo uint32) (*Page, bool, error) {
-	if p == nil {
-		return nil, false, ErrNoFreeFrame
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	id := PageID{Space: space, PageNo: pageNo}
-	if page, ok := p.pages[id]; ok {
-		page.PinCount++
-		p.lru.Touch(page)
-		p.hits++
-		return page, true, nil
-	}
-
-	if len(p.pages) >= p.capacity {
-		if !p.evictOne() {
-			return nil, false, ErrNoFreeFrame
-		}
-	}
-
-	page := &Page{
-		ID:       id,
-		Data:     make([]byte, p.pageSize),
-		PinCount: 1,
-	}
-	if err := fil.SpaceReadPageInto(space, pageNo, page.Data); err != nil {
-		return nil, false, err
-	}
-	p.lru.Add(page)
-	p.pages[id] = page
-	p.misses++
-	return page, false, nil
+	return p.fetch(space, pageNo, false)
 }
 
 // Get returns a pinned page frame, loading it if needed.
@@ -226,4 +196,67 @@ func (p *Pool) removeFromFlushList(page *Page) {
 	}
 	p.flush.Remove(page.flushElem)
 	page.flushElem = nil
+}
+
+// EnableReadAhead configures read-ahead prefetching; zero area disables it.
+func (p *Pool) EnableReadAhead(area, threshold int) {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if area <= 0 {
+		p.readAhead = nil
+		return
+	}
+	p.readAhead = NewReadAhead(area, threshold)
+}
+
+func (p *Pool) fetch(space, pageNo uint32, prefetch bool) (*Page, bool, error) {
+	if p == nil {
+		return nil, false, ErrNoFreeFrame
+	}
+	p.mu.Lock()
+	id := PageID{Space: space, PageNo: pageNo}
+	if page, ok := p.pages[id]; ok {
+		page.PinCount++
+		p.lru.Touch(page)
+		p.hits++
+		ra := p.readAhead
+		p.mu.Unlock()
+		if !prefetch && ra != nil {
+			ra.Prefetch(p, space, pageNo)
+		}
+		return page, true, nil
+	}
+
+	if len(p.pages) >= p.capacity {
+		if !p.evictOne() {
+			p.mu.Unlock()
+			return nil, false, ErrNoFreeFrame
+		}
+	}
+
+	page := &Page{
+		ID:       id,
+		Data:     make([]byte, p.pageSize),
+		PinCount: 1,
+	}
+	if err := fil.SpaceReadPageInto(space, pageNo, page.Data); err != nil {
+		p.mu.Unlock()
+		return nil, false, err
+	}
+	p.lru.Add(page)
+	p.pages[id] = page
+	p.misses++
+	ra := p.readAhead
+	p.mu.Unlock()
+	if !prefetch && ra != nil {
+		ra.Prefetch(p, space, pageNo)
+	}
+	return page, false, nil
+}
+
+func (p *Pool) prefetch(space, pageNo uint32) (*Page, bool, error) {
+	return p.fetch(space, pageNo, true)
 }

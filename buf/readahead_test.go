@@ -47,3 +47,21 @@ func TestReadAheadPrefetchLoadsPool(t *testing.T) {
 		t.Fatalf("expected prefetched pages to be in pool")
 	}
 }
+
+func TestReadAheadRandom(t *testing.T) {
+	ra := NewReadAhead(4, 3)
+
+	if ids := ra.OnAccess(1, 1); len(ids) != 0 {
+		t.Fatalf("expected no prefetch on first access")
+	}
+	if ids := ra.OnAccess(1, 3); len(ids) != 0 {
+		t.Fatalf("expected no prefetch on second access")
+	}
+	ids := ra.OnAccess(1, 2)
+	if len(ids) != 4 {
+		t.Fatalf("expected random prefetch of 4 pages, got %d", len(ids))
+	}
+	if ids[0].PageNo != 0 || ids[len(ids)-1].PageNo != 3 {
+		t.Fatalf("unexpected random prefetch range: %+v", ids)
+	}
+}

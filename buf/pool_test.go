@@ -98,3 +98,29 @@ func TestPoolGetPut(t *testing.T) {
 		t.Fatalf("expected dirty count 1, got %d", stats.Dirty)
 	}
 }
+
+func TestPoolReadAheadIntegration(t *testing.T) {
+	pool := NewPool(6, BufPoolDefaultPageSize)
+	pool.EnableReadAhead(2, 2)
+
+	page, _, err := pool.Fetch(1, 1)
+	if err != nil {
+		t.Fatalf("unexpected fetch error: %v", err)
+	}
+	pool.Release(page)
+
+	page, _, err = pool.Fetch(1, 2)
+	if err != nil {
+		t.Fatalf("unexpected fetch error: %v", err)
+	}
+	pool.Release(page)
+
+	page, hit, err := pool.Fetch(1, 3)
+	if err != nil {
+		t.Fatalf("unexpected fetch error: %v", err)
+	}
+	if !hit {
+		t.Fatalf("expected page 3 to be prefetched")
+	}
+	pool.Release(page)
+}

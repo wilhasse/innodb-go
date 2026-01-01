@@ -19,6 +19,8 @@ type ReadAhead struct {
 	threshold int
 	lastPage  map[uint32]uint32
 	seqCount  map[uint32]int
+	lastArea  map[uint32]uint32
+	areaCount map[uint32]int
 }
 
 // NewReadAhead constructs a read-ahead helper.
@@ -37,6 +39,8 @@ func NewReadAhead(area, threshold int) *ReadAhead {
 		threshold: threshold,
 		lastPage:  make(map[uint32]uint32),
 		seqCount:  make(map[uint32]int),
+		lastArea:  make(map[uint32]uint32),
+		areaCount: make(map[uint32]int),
 	}
 }
 
@@ -56,16 +60,28 @@ func (r *ReadAhead) OnAccess(space, pageNo uint32) []PageID {
 	}
 	r.lastPage[space] = pageNo
 
+	area := uint32(0)
+	if r.area > 0 {
+		area = pageNo / uint32(r.area)
+	}
+	if lastArea, ok := r.lastArea[space]; ok && lastArea == area {
+		r.areaCount[space]++
+	} else {
+		r.areaCount[space] = 1
+	}
+	r.lastArea[space] = area
+
 	if r.seqCount[space] < r.threshold {
-		return nil
+		if r.areaCount[space] < r.threshold {
+			return nil
+		}
+		r.areaCount[space] = 0
+		return r.prefetchArea(space, area)
 	}
 
 	r.seqCount[space] = 0
-	prefetch := make([]PageID, 0, r.area)
-	for i := uint32(1); i <= uint32(r.area); i++ {
-		prefetch = append(prefetch, PageID{Space: space, PageNo: pageNo + i})
-	}
-	return prefetch
+	r.areaCount[space] = 0
+	return r.prefetchLinear(space, pageNo)
 }
 
 // Prefetch runs read-ahead and loads pages into the pool.
@@ -75,10 +91,27 @@ func (r *ReadAhead) Prefetch(pool *Pool, space, pageNo uint32) []PageID {
 		return ids
 	}
 	for _, id := range ids {
-		page, _, err := pool.Fetch(id.Space, id.PageNo)
+		page, _, err := pool.prefetch(id.Space, id.PageNo)
 		if err == nil {
 			pool.Release(page)
 		}
 	}
 	return ids
+}
+
+func (r *ReadAhead) prefetchLinear(space, pageNo uint32) []PageID {
+	prefetch := make([]PageID, 0, r.area)
+	for i := uint32(1); i <= uint32(r.area); i++ {
+		prefetch = append(prefetch, PageID{Space: space, PageNo: pageNo + i})
+	}
+	return prefetch
+}
+
+func (r *ReadAhead) prefetchArea(space, area uint32) []PageID {
+	prefetch := make([]PageID, 0, r.area)
+	start := area * uint32(r.area)
+	for i := uint32(0); i < uint32(r.area); i++ {
+		prefetch = append(prefetch, PageID{Space: space, PageNo: start + i})
+	}
+	return prefetch
 }
