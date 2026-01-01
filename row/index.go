@@ -207,6 +207,17 @@ func (store *Store) KeyForRow(row *data.Tuple) []byte {
 	return store.keyForInsert(row, id)
 }
 
+// KeyForRowID builds the stored key for a tuple using the provided row id.
+func (store *Store) KeyForRowID(row *data.Tuple, rowID uint64) []byte {
+	if store == nil || row == nil {
+		return nil
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.ensureIndex()
+	return store.keyForInsert(row, rowID)
+}
+
 // RowByID returns a tuple by row ID.
 func (store *Store) RowByID(id uint64) *data.Tuple {
 	if store == nil {

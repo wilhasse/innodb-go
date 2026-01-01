@@ -7,7 +7,6 @@ import (
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
 	"github.com/wilhasse/innodb-go/lock"
-	"github.com/wilhasse/innodb-go/rec"
 	"github.com/wilhasse/innodb-go/row"
 )
 
@@ -210,31 +209,29 @@ func CursorDeleteRow(crsr *Cursor) ErrCode {
 }
 
 func decodeCursorRecord(crsr *Cursor) (*data.Tuple, bool) {
-	if crsr == nil || crsr.Table == nil || crsr.treeCur == nil || !crsr.treeCur.Valid() {
+	if crsr == nil || crsr.Table == nil {
 		return nil, false
 	}
-	value := crsr.treeCur.Value()
+	var value []byte
+	if crsr.usePageTree() && crsr.pageCur != nil {
+		if crsr.pageCur == nil || !crsr.pageCur.Valid() {
+			return nil, false
+		}
+		value = crsr.pageCur.Value()
+	} else {
+		if crsr.treeCur == nil && crsr.pcur != nil && crsr.pcur.Cur != nil && crsr.pcur.Cur.Valid() {
+			crsr.treeCur = crsr.pcur.Cur.Cursor
+		}
+		if crsr.treeCur == nil || !crsr.treeCur.Valid() {
+			return nil, false
+		}
+		value = crsr.treeCur.Value()
+	}
 	if len(value) == 0 {
 		return nil, false
 	}
-	recBytes := value
-	if len(value) >= 8 {
-		recBytes = value[8:]
-	}
-	if len(recBytes) == 0 {
-		return nil, false
-	}
-	nFields := len(crsr.Table.Schema.Columns)
-	if nFields == 0 && crsr.Table.Store != nil {
-		if len(crsr.Table.Store.Rows) > 0 && crsr.Table.Store.Rows[0] != nil {
-			nFields = len(crsr.Table.Store.Rows[0].Fields)
-		}
-	}
-	if nFields == 0 {
-		return nil, false
-	}
-	decoded, err := rec.DecodeVar(recBytes, nFields, 0)
-	if err != nil {
+	decoded, ok := decodeCursorTuple(crsr, value)
+	if !ok {
 		return nil, false
 	}
 	return decoded, true

@@ -46,12 +46,17 @@ type Cursor struct {
 	Tree       *btr.Tree
 	Index      *row.SecondaryIndex
 	treeCur    *btr.Cursor
+	pageCur    *btr.PageCursor
 	pcur       *btr.Pcur
 	lastKey    []byte
 	virtualRow *data.Tuple
 	Trx        *trx.Trx
 	MatchMode  MatchMode
 	LockMode   LockMode
+}
+
+func (crsr *Cursor) usePageTree() bool {
+	return crsr != nil && crsr.Index == nil && crsr.Table != nil && crsr.Table.Store != nil && crsr.Table.Store.PageTree != nil
 }
 
 // CursorOpenTable opens a cursor on a table.
@@ -83,6 +88,9 @@ func CursorClose(crsr *Cursor) ErrCode {
 	if crsr != nil && crsr.pcur != nil {
 		crsr.pcur.Free()
 	}
+	if crsr != nil {
+		crsr.pageCur = nil
+	}
 	return DB_SUCCESS
 }
 
@@ -112,6 +120,7 @@ func CursorReset(crsr *Cursor) ErrCode {
 		crsr.pcur.Init()
 	}
 	crsr.treeCur = nil
+	crsr.pageCur = nil
 	crsr.lastKey = nil
 	crsr.virtualRow = nil
 	return DB_SUCCESS
@@ -167,7 +176,27 @@ func validateNotNull(crsr *Cursor, tpl *data.Tuple) ErrCode {
 
 // CursorFirst positions the cursor at the first row.
 func CursorFirst(crsr *Cursor) ErrCode {
-	if crsr == nil || crsr.Table == nil || crsr.Tree == nil {
+	if crsr == nil || crsr.Table == nil {
+		return DB_ERROR
+	}
+	if crsr.usePageTree() {
+		cur, err := crsr.Table.Store.PageTree.First()
+		if err != nil {
+			return DB_ERROR
+		}
+		crsr.pageCur = cur
+		crsr.treeCur = nil
+		crsr.virtualRow = nil
+		if crsr.pageCur == nil || !crsr.pageCur.Valid() {
+			return DB_RECORD_NOT_FOUND
+		}
+		if !advancePageCursorVisible(crsr) {
+			return DB_RECORD_NOT_FOUND
+		}
+		crsr.lastKey = crsr.pageCur.Key()
+		return DB_SUCCESS
+	}
+	if crsr.Tree == nil {
 		return DB_ERROR
 	}
 	pcur := ensurePcur(crsr)
@@ -187,7 +216,39 @@ func CursorFirst(crsr *Cursor) ErrCode {
 
 // CursorNext advances the cursor.
 func CursorNext(crsr *Cursor) ErrCode {
-	if crsr == nil || crsr.Table == nil || crsr.Tree == nil {
+	if crsr == nil || crsr.Table == nil {
+		return DB_ERROR
+	}
+	if crsr.usePageTree() {
+		crsr.treeCur = nil
+		if crsr.pageCur != nil && crsr.pageCur.Valid() {
+			crsr.lastKey = crsr.pageCur.Key()
+			if !crsr.pageCur.Next() {
+				crsr.pageCur = nil
+				return DB_END_OF_INDEX
+			}
+		} else {
+			if len(crsr.lastKey) == 0 {
+				return DB_END_OF_INDEX
+			}
+			cur, _, err := crsr.Table.Store.PageTree.Seek(crsr.lastKey, btr.SearchGE)
+			if err != nil || cur == nil || !cur.Valid() {
+				return DB_END_OF_INDEX
+			}
+			if bytes.Equal(cur.Key(), crsr.lastKey) {
+				if !cur.Next() {
+					return DB_END_OF_INDEX
+				}
+			}
+			crsr.pageCur = cur
+		}
+		if !advancePageCursorVisible(crsr) {
+			return DB_END_OF_INDEX
+		}
+		crsr.lastKey = crsr.pageCur.Key()
+		return DB_SUCCESS
+	}
+	if crsr.Tree == nil {
 		return DB_ERROR
 	}
 	pcur := ensurePcur(crsr)
@@ -226,12 +287,23 @@ func CursorNext(crsr *Cursor) ErrCode {
 
 // CursorReadRow reads the current row into tpl.
 func CursorReadRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
-	if crsr == nil || crsr.Table == nil || crsr.Tree == nil || tpl == nil {
+	if crsr == nil || crsr.Table == nil || tpl == nil {
 		return DB_ERROR
 	}
 	if crsr.virtualRow != nil {
 		copyTuple(tpl, crsr.virtualRow)
 		return DB_SUCCESS
+	}
+	if crsr.usePageTree() && crsr.pageCur != nil {
+		rowTuple, ok := cursorPageVisibleTuple(crsr)
+		if !ok {
+			return DB_RECORD_NOT_FOUND
+		}
+		copyTuple(tpl, rowTuple)
+		return DB_SUCCESS
+	}
+	if crsr.Tree == nil {
+		return DB_ERROR
 	}
 	if crsr.treeCur == nil || !crsr.treeCur.Valid() {
 		return DB_RECORD_NOT_FOUND
@@ -284,6 +356,22 @@ func cursorRow(crsr *Cursor) (*data.Tuple, bool) {
 	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil {
 		return nil, false
 	}
+	if crsr.usePageTree() && crsr.pageCur != nil {
+		if crsr.pageCur == nil || !crsr.pageCur.Valid() {
+			return nil, false
+		}
+		value := crsr.pageCur.Value()
+		rowID, ok := row.DecodeRowID(value)
+		if !ok {
+			return nil, false
+		}
+		rowTuple := crsr.Table.Store.RowByID(rowID)
+		if rowTuple != nil {
+			return rowTuple, true
+		}
+		decoded, ok := decodeCursorTuple(crsr, value)
+		return decoded, ok
+	}
 	if crsr.treeCur == nil && crsr.pcur != nil && crsr.pcur.Cur != nil && crsr.pcur.Cur.Valid() {
 		crsr.treeCur = crsr.pcur.Cur.Cursor
 	}
@@ -301,12 +389,132 @@ func cursorRow(crsr *Cursor) (*data.Tuple, bool) {
 	return rowTuple, true
 }
 
+func cursorPageVisibleTuple(crsr *Cursor) (*data.Tuple, bool) {
+	rowID, tuple, ok := cursorPageTuple(crsr)
+	if !ok || tuple == nil {
+		return nil, false
+	}
+	if crsr.Index == nil && crsr.Trx != nil && crsr.Trx.ReadView != nil {
+		key := cursorPageKey(crsr, tuple, rowID, crsr.pageCur.Key())
+		if len(key) > 0 {
+			if visible, ok := crsr.Table.Store.VersionForView(key, crsr.Trx.ReadView); ok {
+				if visible == nil {
+					return nil, false
+				}
+				return visible, true
+			}
+		}
+	}
+	return tuple, true
+}
+
+func cursorPageTuple(crsr *Cursor) (uint64, *data.Tuple, bool) {
+	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil {
+		return 0, nil, false
+	}
+	if crsr.pageCur == nil || !crsr.pageCur.Valid() {
+		return 0, nil, false
+	}
+	rowID, tuple, ok := decodeCursorValue(crsr, crsr.pageCur.Value())
+	if !ok || tuple == nil {
+		return 0, nil, false
+	}
+	return rowID, tuple, true
+}
+
+func advancePageCursorVisible(crsr *Cursor) bool {
+	if crsr == nil {
+		return false
+	}
+	for crsr.pageCur != nil && crsr.pageCur.Valid() {
+		if _, ok := cursorPageVisibleTuple(crsr); ok {
+			return true
+		}
+		if !crsr.pageCur.Next() {
+			crsr.pageCur = nil
+			return false
+		}
+	}
+	return false
+}
+
+func cursorPageKey(crsr *Cursor, tuple *data.Tuple, rowID uint64, recordKey []byte) []byte {
+	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil {
+		return recordKey
+	}
+	store := crsr.Table.Store
+	if len(store.PrimaryKeyFields) == 0 && store.PrimaryKey < 0 {
+		if tuple != nil && rowID != 0 {
+			return store.KeyForRowID(tuple, rowID)
+		}
+		if rowID != 0 {
+			if rowTuple := store.RowByID(rowID); rowTuple != nil {
+				return store.KeyForRow(rowTuple)
+			}
+		}
+	}
+	if len(recordKey) > 0 {
+		return recordKey
+	}
+	if tuple != nil && rowID != 0 {
+		return store.KeyForRowID(tuple, rowID)
+	}
+	return recordKey
+}
+
+func decodeCursorValue(crsr *Cursor, value []byte) (uint64, *data.Tuple, bool) {
+	rowID, ok := row.DecodeRowID(value)
+	if !ok {
+		return 0, nil, false
+	}
+	if tuple, ok := decodeCursorTuple(crsr, value); ok {
+		return rowID, tuple, true
+	}
+	if crsr != nil && crsr.Table != nil && crsr.Table.Store != nil {
+		if rowTuple := crsr.Table.Store.RowByID(rowID); rowTuple != nil {
+			return rowID, rowTuple, true
+		}
+	}
+	return rowID, nil, false
+}
+
+func decodeCursorTuple(crsr *Cursor, value []byte) (*data.Tuple, bool) {
+	if len(value) == 0 {
+		return nil, false
+	}
+	recBytes := value
+	if len(value) >= 8 {
+		recBytes = value[8:]
+	}
+	if len(recBytes) == 0 {
+		return nil, false
+	}
+	nFields := 0
+	if crsr != nil && crsr.Table != nil && crsr.Table.Schema != nil {
+		nFields = len(crsr.Table.Schema.Columns)
+	}
+	if nFields == 0 && crsr != nil && crsr.Table != nil && crsr.Table.Store != nil {
+		if len(crsr.Table.Store.Rows) > 0 && crsr.Table.Store.Rows[0] != nil {
+			nFields = len(crsr.Table.Store.Rows[0].Fields)
+		}
+	}
+	if nFields == 0 {
+		return nil, false
+	}
+	decoded, err := rec.DecodeVar(recBytes, nFields, 0)
+	if err != nil {
+		return nil, false
+	}
+	return decoded, true
+}
+
 // CursorMoveTo positions the cursor based on a search tuple.
 func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrCode {
-	if crsr == nil || crsr.Table == nil || crsr.Tree == nil || tpl == nil {
+	if crsr == nil || crsr.Table == nil || tpl == nil {
 		return DB_ERROR
 	}
 	crsr.virtualRow = nil
+	crsr.pageCur = nil
 	keyFields := searchFieldCount(tpl)
 	if keyFields == 0 {
 		return DB_ERROR
@@ -340,6 +548,95 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 		searchKey = store.KeyForSearch(tpl, keyFields)
 	}
 	if len(searchKey) == 0 {
+		return DB_ERROR
+	}
+	if crsr.usePageTree() && crsr.Index == nil && storeHasPrimaryKey(store) {
+		cur, exact, err := store.PageTree.Seek(searchKey, btr.SearchGE)
+		if err != nil {
+			return DB_ERROR
+		}
+		if cur == nil || !cur.Valid() {
+			if exactRequired && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
+				return DB_SUCCESS
+			}
+			return DB_RECORD_NOT_FOUND
+		}
+		if mode == CursorG && exact && bytes.Equal(cur.Key(), searchKey) {
+			if !cur.Next() {
+				return DB_RECORD_NOT_FOUND
+			}
+		}
+		crsr.pageCur = cur
+		crsr.treeCur = nil
+		for crsr.pageCur != nil && crsr.pageCur.Valid() {
+			_, rowTuple, ok := cursorPageTuple(crsr)
+			if !ok {
+				if !crsr.pageCur.Next() {
+					break
+				}
+				continue
+			}
+			cmp := 0
+			if crsr.Index != nil {
+				cmp = compareIndexTuplePrefix(rowTuple, tpl, cols, keyFields)
+			} else {
+				cmp = compareTuplePrefix(rowTuple, tpl, keyFields)
+			}
+			switch mode {
+			case CursorGE:
+				if cmp < 0 {
+					if !crsr.pageCur.Next() {
+						return DB_RECORD_NOT_FOUND
+					}
+					continue
+				}
+			case CursorG:
+				if cmp <= 0 {
+					if !crsr.pageCur.Next() {
+						return DB_RECORD_NOT_FOUND
+					}
+					continue
+				}
+			}
+			if prefixRequired {
+				if crsr.Index != nil {
+					if !tupleHasIndexPrefix(rowTuple, tpl, cols, prefixes, keyFields) {
+						if !crsr.pageCur.Next() {
+							return DB_RECORD_NOT_FOUND
+						}
+						continue
+					}
+				} else if !tupleHasPrefix(rowTuple, tpl, keyFields) {
+					if !crsr.pageCur.Next() {
+						return DB_RECORD_NOT_FOUND
+					}
+					continue
+				}
+			}
+			if exactRequired {
+				if cmp != 0 || (pkFields > 0 && keyFields != pkFields) {
+					if !crsr.pageCur.Next() {
+						return DB_RECORD_NOT_FOUND
+					}
+					continue
+				}
+			}
+			crsr.lastKey = crsr.pageCur.Key()
+			if ret != nil {
+				if cmp == 0 && (pkFields == 0 || keyFields == pkFields) {
+					*ret = 0
+				} else {
+					*ret = -1
+				}
+			}
+			return DB_SUCCESS
+		}
+		if exactRequired && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
+			return DB_SUCCESS
+		}
+		return DB_RECORD_NOT_FOUND
+	}
+	if crsr.Tree == nil {
 		return DB_ERROR
 	}
 	pcur := ensurePcur(crsr)
@@ -491,6 +788,13 @@ func primaryKeyCols(table *Table) int {
 		}
 	}
 	return 0
+}
+
+func storeHasPrimaryKey(store *row.Store) bool {
+	if store == nil {
+		return false
+	}
+	return len(store.PrimaryKeyFields) > 0 || store.PrimaryKey >= 0
 }
 
 func compareTuplePrefix(row, search *data.Tuple, n int) int {

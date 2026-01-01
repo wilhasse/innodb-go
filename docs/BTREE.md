@@ -153,3 +153,10 @@
   - `row.Store` wires a `btr.PageTree` for clustered data; table attach loads rows from page records.
   - DML now upserts/deletes PageTree records and logs page images with `mtr` for redo.
   - `tests/ibgo246_crud_persist_test.go` covers insert/update/delete persistence over restart.
+
+## IBGO-247: Page cursor reads + MVCC scans
+- C refs: `btr/btr0cur.c`, `read/read0read.c`, `row/row0sel.c`
+- Go mapping:
+  - `btr.PageCursor` and `PageTree.Seek/First` iterate clustered leaf records via page links.
+  - `api.Cursor` reads/scans from the page cursor and applies `VersionForView` visibility.
+  - `api/mvcc_scan_test.go` validates consistent scans skip newer inserts and keep old versions.
