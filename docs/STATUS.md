@@ -13,7 +13,7 @@ rough indicator and are taken from `wc -l` over each Go package directory.
 | page (page format) | ~3,000 | 660 | Partial | Page headers + record list basics only. |
 | fil (files) | ~3,500 | 460 | Minimal | Tablespace registry with attached files; page read/write helpers auto-extend size. |
 | buf (buffer pool) | ~8,000 | 1,120 | Minimal | Simplified pool + LRU; fetch/flush uses fil page IO. |
-| log (redo log) | ~3,000 | 558 | Minimal | In-memory log records only, no WAL or recovery. |
+| log (redo log) | ~3,000 | 900 | Partial | File-backed header + append-only records; checkpoint LSN persisted; recovery scan populates recv hash (LSN-only apply). |
 | lock (locking) | ~5,700 | 352 | Minimal | No row locks, no deadlock detection. |
 | trx (transactions) | ~4,500 | 1,273 | Minimal | IDs + scaffolding only, no real isolation or rollback. |
 | row (row ops) | ~7,000 | 1,900 | Partial | Basic row ops + BTR integration; row-store log replay on attach. |
@@ -44,9 +44,9 @@ rough indicator and are taken from `wc -l` over each Go package directory.
 - No lock wait queues
 
 4) Durability
-- No redo log (WAL)
-- No crash recovery
-- No checkpoint system
+- Redo log persistence is minimal (header + append-only records)
+- Crash recovery only updates page LSN, not page contents
+- Minimal checkpoint LSN persistence
 - No doublewrite buffer
 
 5) Buffer Pool
@@ -103,6 +103,7 @@ The Go port should be able to:
 - Scan tables with cursors
 - Create .ibd tablespace files
 - Handle page splits
+- Persist redo log headers and scan log records on startup
 
 It cannot:
 - Survive a crash (no recovery)

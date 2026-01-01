@@ -36,6 +36,7 @@ Environment overrides:
 - Some tests require cleaning data/log files between runs.
 - On Windows, use the CMake/VS build flow and set `PATH` instead of
   `LD_LIBRARY_PATH`.
+- Recovery coverage includes restart scan of redo logs in `api/recovery_test.go`.
 
 ## Test Comparison (Post-IBGO-195)
 
@@ -66,5 +67,6 @@ Expected metadata files (when `data_home_dir` is set):
 
 ```
 ib_dict.sys       (dictionary persistence)
+ib_logfile0       (redo log header + records)
 <db>/<table>.ibd  (table storage log)
 ```
