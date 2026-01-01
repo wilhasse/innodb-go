@@ -14,13 +14,17 @@ const (
 	Mlog4Bytes = 4
 	Mlog8Bytes = 8
 
+	MlogRecInsert        = 9
+	MlogRecUpdateInPlace = 13
+	MlogRecDelete        = 14
+
 	MlogWriteStringType = 30
-	MlogMultiRecEnd = 31
-	MlogBiggestType = 51
+	MlogMultiRecEnd     = 31
+	MlogBiggestType     = 51
 )
 
 const (
-	filPageOffset            = 4
+	filPageOffset             = 4
 	filPageArchLogNoOrSpaceID = 34
 )
 
@@ -233,6 +237,77 @@ func MlogLogString(page []byte, offset int, length int, mtr *Mtr) {
 	}
 }
 
+// MlogWriteRecInsert writes a record payload and logs the insert.
+func MlogWriteRecInsert(page []byte, offset int, data []byte, mtr *Mtr) {
+	if offset < 0 || offset+len(data) > len(page) {
+		return
+	}
+	copy(page[offset:], data)
+	mlogLogRecordChange(page, offset, data, MlogRecInsert, mtr)
+}
+
+// MlogWriteRecUpdateInPlace writes record payload updates and logs them.
+func MlogWriteRecUpdateInPlace(page []byte, offset int, data []byte, mtr *Mtr) {
+	if offset < 0 || offset+len(data) > len(page) {
+		return
+	}
+	copy(page[offset:], data)
+	mlogLogRecordChange(page, offset, data, MlogRecUpdateInPlace, mtr)
+}
+
+// MlogWriteRecDelete clears a record payload and logs the delete.
+func MlogWriteRecDelete(page []byte, offset int, length int, mtr *Mtr) {
+	if offset < 0 || length < 0 || offset+length > len(page) {
+		return
+	}
+	if length > 0 {
+		clear(page[offset : offset+length])
+	}
+	logPtr := MlogOpen(mtr, 18)
+	if logPtr == nil {
+		return
+	}
+	pos := MlogWriteInitialLogRecordFast(page, MlogRecDelete, logPtr, mtr)
+	if pos == 0 {
+		MlogClose(mtr, 0)
+		return
+	}
+	if pos+4 > len(logPtr) {
+		MlogClose(mtr, pos)
+		return
+	}
+	mach.WriteTo2(logPtr[pos:], uint32(offset))
+	pos += 2
+	mach.WriteTo2(logPtr[pos:], uint32(length))
+	pos += 2
+	MlogClose(mtr, pos)
+}
+
+func mlogLogRecordChange(page []byte, offset int, data []byte, typ byte, mtr *Mtr) {
+	if len(data) == 0 {
+		return
+	}
+	logPtr := MlogOpen(mtr, 30)
+	if logPtr == nil {
+		return
+	}
+	pos := MlogWriteInitialLogRecordFast(page, typ, logPtr, mtr)
+	if pos == 0 {
+		MlogClose(mtr, 0)
+		return
+	}
+	if pos+4 > len(logPtr) {
+		MlogClose(mtr, pos)
+		return
+	}
+	mach.WriteTo2(logPtr[pos:], uint32(offset))
+	pos += 2
+	mach.WriteTo2(logPtr[pos:], uint32(len(data)))
+	pos += 2
+	MlogClose(mtr, pos)
+	MlogCatenateString(mtr, data)
+}
+
 // MlogParseInitialLogRecord parses type/space/page from a log buffer.
 func MlogParseInitialLogRecord(buf []byte) ([]byte, byte, uint32, uint32, bool) {
 	if len(buf) < 1 {
@@ -317,4 +392,31 @@ func MlogParseString(buf []byte, page []byte) ([]byte, bool) {
 		copy(page[offset:], buf[:length])
 	}
 	return buf[length:], true
+}
+
+// MlogParseRecInsert parses a record insert and applies it to page.
+func MlogParseRecInsert(buf []byte, page []byte) ([]byte, bool) {
+	return MlogParseString(buf, page)
+}
+
+// MlogParseRecUpdateInPlace parses an in-place record update.
+func MlogParseRecUpdateInPlace(buf []byte, page []byte) ([]byte, bool) {
+	return MlogParseString(buf, page)
+}
+
+// MlogParseRecDelete parses a record delete and applies it to page.
+func MlogParseRecDelete(buf []byte, page []byte) ([]byte, bool) {
+	if len(buf) < 4 {
+		return nil, false
+	}
+	offset := int(mach.ReadFrom2(buf))
+	length := int(mach.ReadFrom2(buf[2:]))
+	buf = buf[4:]
+	if length < 0 || offset < 0 {
+		return nil, false
+	}
+	if page != nil && offset+length <= len(page) {
+		clear(page[offset : offset+length])
+	}
+	return buf, true
 }
