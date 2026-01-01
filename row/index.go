@@ -242,9 +242,11 @@ func (store *Store) removeTuple(row *data.Tuple) bool {
 	if ok {
 		delete(store.idByRow, row)
 		delete(store.rowsByID, id)
+		key := store.keyForInsert(row, id)
+		pageKey := store.pageTreeKey(row, id)
+		_ = store.deletePageTree(pageKey)
 		store.deleteSecondaryIndexes(row, id)
 		if store.Tree != nil {
-			key := store.keyForInsert(row, id)
 			cur := btr.NewCur(store.Tree)
 			if cur.Search(key, btr.SearchGE) && CompareKeys(cur.Key(), key) == 0 {
 				cur.OptimisticDelete()
@@ -291,6 +293,12 @@ func (store *Store) replaceTuple(oldRow, newRow *data.Tuple) error {
 	if store.hasSecondaryDuplicateExcept(newRow, oldRow, id) {
 		return ErrDuplicateKey
 	}
+	newVal := encodeRowValue(id, newRow)
+	pageOldKey := store.pageTreeKey(oldRow, id)
+	pageNewKey := store.pageTreeKey(newRow, id)
+	if err := store.updatePageTree(pageOldKey, pageNewKey, newVal); err != nil {
+		return err
+	}
 	for i, existing := range store.Rows {
 		if existing == oldRow {
 			store.Rows[i] = newRow
@@ -309,16 +317,15 @@ func (store *Store) replaceTuple(oldRow, newRow *data.Tuple) error {
 				store.Tree.Delete(oldKey)
 			}
 		}
-		val := encodeRowValue(id, newRow)
 		cur := btr.NewCur(store.Tree)
-		if !cur.OptimisticInsert(newKey, val) {
-			store.Tree.Insert(newKey, val)
+		if !cur.OptimisticInsert(newKey, newVal) {
+			store.Tree.Insert(newKey, newVal)
 		}
 	}
 	if err := store.updateSecondaryIndexes(oldRow, newRow, id); err != nil {
 		return err
 	}
-	store.appendLog(storeOpUpdate, newKey, encodeRowValue(id, newRow))
+	store.appendLog(storeOpUpdate, newKey, newVal)
 	return nil
 }
 

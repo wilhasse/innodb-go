@@ -151,8 +151,8 @@ func Shutdown(_ ShutdownFlag) ErrCode {
 	if err := CfgShutdown(); err != DB_SUCCESS {
 		return err
 	}
-	resetSchemaState()
 	_ = buf.FlushAll()
+	resetSchemaState()
 	log.Shutdown()
 	fil.DoublewriteShutdown()
 	closeSystemTablespace()

@@ -7,6 +7,7 @@ import (
 	"github.com/wilhasse/innodb-go/buf"
 	"github.com/wilhasse/innodb-go/fil"
 	"github.com/wilhasse/innodb-go/fsp"
+	"github.com/wilhasse/innodb-go/mtr"
 	"github.com/wilhasse/innodb-go/page"
 	"github.com/wilhasse/innodb-go/ut"
 )
@@ -91,10 +92,11 @@ func (t *PageTree) Insert(key, value []byte) (bool, error) {
 		encodeNodePtrRecord(leftKey, t.RootPage),
 		encodeNodePtrRecord(rightKey, rightPage),
 	}
-	if !rebuildIndexPage(h.data, newRoot, rootLevel+1, fil.NullPageOffset, fil.NullPageOffset, records) {
+	if !rebuildIndexPage(h.data, t.SpaceID, newRoot, rootLevel+1, fil.NullPageOffset, fil.NullPageOffset, records) {
 		_ = h.commit(false)
 		return false, errors.New("btr: root rebuild failed")
 	}
+	t.logPageWrite(h.data)
 	if err := h.commit(true); err != nil {
 		return false, err
 	}
@@ -149,6 +151,162 @@ func (t *PageTree) Search(key []byte) ([]byte, bool, error) {
 	}
 }
 
+// Delete removes a key/value pair by key.
+func (t *PageTree) Delete(key []byte) (bool, error) {
+	if t == nil {
+		return false, errors.New("btr: nil tree")
+	}
+	if t.RootPage == fil.NullPageOffset {
+		return false, nil
+	}
+	t.ensureDefaults()
+	if err := t.ensureRootInitialized(); err != nil {
+		return false, err
+	}
+
+	pageNo := t.RootPage
+	for {
+		h, err := t.fetchPage(pageNo)
+		if err != nil {
+			return false, err
+		}
+		level := page.PageGetLevel(h.data)
+		if level == 0 {
+			records := collectUserRecords(h.data)
+			idx, exact := findRecordIndex(records, key, t.Compare)
+			if !exact {
+				_ = h.commit(false)
+				return false, nil
+			}
+			records = append(records[:idx], records[idx+1:]...)
+			prev := page.PageGetPrev(h.data)
+			next := page.PageGetNext(h.data)
+			if !rebuildIndexPage(h.data, t.SpaceID, pageNo, level, prev, next, records) {
+				_ = h.commit(false)
+				return false, errors.New("btr: leaf delete rebuild failed")
+			}
+			t.logPageWrite(h.data)
+			if err := h.commit(true); err != nil {
+				return false, err
+			}
+			if t.size > 0 {
+				t.size--
+			}
+			return true, nil
+		}
+		records := collectUserRecords(h.data)
+		child, ok := findChildPage(records, key, t.Compare)
+		_ = h.commit(false)
+		if !ok {
+			return false, errors.New("btr: missing child page")
+		}
+		pageNo = child
+	}
+}
+
+// ForEach iterates all leaf records in key order.
+func (t *PageTree) ForEach(fn func(key, value []byte) bool) error {
+	if t == nil || fn == nil {
+		return nil
+	}
+	if t.RootPage == fil.NullPageOffset {
+		return nil
+	}
+	t.ensureDefaults()
+	if err := t.ensureRootInitialized(); err != nil {
+		return err
+	}
+	start, err := t.leftmostLeaf()
+	if err != nil {
+		return err
+	}
+	pageNo := start
+	for !isNullPageNo(pageNo) {
+		h, err := t.fetchPage(pageNo)
+		if err != nil {
+			return err
+		}
+		records := collectUserRecords(h.data)
+		next := page.PageGetNext(h.data)
+		for _, recBytes := range records {
+			key, val, ok := decodeLeafRecord(recBytes)
+			if !ok {
+				continue
+			}
+			if !fn(key, val) {
+				_ = h.commit(false)
+				return nil
+			}
+		}
+		if err := h.commit(false); err != nil {
+			return err
+		}
+		pageNo = next
+	}
+	return nil
+}
+
+func (t *PageTree) leftmostLeaf() (uint32, error) {
+	pageNo := t.RootPage
+	for {
+		h, err := t.fetchPage(pageNo)
+		if err != nil {
+			return 0, err
+		}
+		level := page.PageGetLevel(h.data)
+		if level == 0 {
+			_ = h.commit(false)
+			return pageNo, nil
+		}
+		records := collectUserRecords(h.data)
+		if len(records) == 0 {
+			_ = h.commit(false)
+			return 0, errors.New("btr: empty internal page")
+		}
+		_, child, ok := decodeNodePtrRecord(records[0])
+		_ = h.commit(false)
+		if !ok {
+			return 0, errors.New("btr: invalid node pointer")
+		}
+		pageNo = child
+	}
+}
+
+func (t *PageTree) splitLeafRecords(records [][]byte) ([][]byte, [][]byte, bool) {
+	if t == nil || len(records) < 2 {
+		return nil, nil, false
+	}
+	for split := 1; split < len(records); split++ {
+		left := records[:split]
+		right := records[split:]
+		if t.canFitRecords(left) && t.canFitRecords(right) {
+			return left, right, true
+		}
+	}
+	return nil, nil, false
+}
+
+func (t *PageTree) canFitRecords(records [][]byte) bool {
+	if t == nil {
+		return false
+	}
+	if len(records) == 0 {
+		return true
+	}
+	buf := make([]byte, ut.UNIV_PAGE_SIZE)
+	return rebuildIndexPage(buf, t.SpaceID, 0, 0, fil.NullPageOffset, fil.NullPageOffset, records)
+}
+
+func (t *PageTree) logPageWrite(pageBytes []byte) {
+	if t == nil || pageBytes == nil {
+		return
+	}
+	var mini mtr.Mtr
+	mtr.Start(&mini)
+	mtr.MlogLogString(pageBytes, 0, ut.UNIV_PAGE_SIZE, &mini)
+	mtr.Commit(&mini)
+}
+
 func (t *PageTree) ensureDefaults() {
 	if t.Compare == nil {
 		t.Compare = bytes.Compare
@@ -156,6 +314,31 @@ func (t *PageTree) ensureDefaults() {
 	if t.MaxRecs <= 0 {
 		t.MaxRecs = PageMaxRecords
 	}
+}
+
+func (t *PageTree) ensureRootInitialized() error {
+	if t == nil || t.RootPage == fil.NullPageOffset {
+		return nil
+	}
+	h, err := t.fetchPage(t.RootPage)
+	if err != nil {
+		return err
+	}
+	if page.PageGetType(h.data) != fil.PageTypeIndex {
+		if !initIndexPageBytes(h.data, t.SpaceID, t.RootPage, 0) {
+			_ = h.commit(false)
+			return errors.New("btr: root init failed")
+		}
+		t.logPageWrite(h.data)
+		return h.commit(true)
+	}
+	if page.PageGetSpaceID(h.data) != t.SpaceID {
+		page.PageSetSpaceID(h.data, t.SpaceID)
+		page.PageSetPageNo(h.data, t.RootPage)
+		t.logPageWrite(h.data)
+		return h.commit(true)
+	}
+	return h.commit(false)
 }
 
 func (t *PageTree) maxRecords() int {
@@ -224,10 +407,11 @@ func (t *PageTree) allocPage(level uint16) (uint32, error) {
 	if err != nil {
 		return fil.NullPageOffset, err
 	}
-	if !initIndexPageBytes(h.data, pageNo, level) {
+	if !initIndexPageBytes(h.data, t.SpaceID, pageNo, level) {
 		_ = h.commit(false)
 		return fil.NullPageOffset, errors.New("btr: init page failed")
 	}
+	t.logPageWrite(h.data)
 	if err := h.commit(true); err != nil {
 		return fil.NullPageOffset, err
 	}
@@ -280,19 +464,24 @@ func (t *PageTree) insertPage(pageNo uint32, key, value []byte) (bool, []byte, u
 		if len(records) <= t.maxRecords() {
 			prev := page.PageGetPrev(pageBytes)
 			next := page.PageGetNext(pageBytes)
-			if !rebuildIndexPage(pageBytes, pageNo, level, prev, next, records) {
+			if rebuildIndexPage(pageBytes, t.SpaceID, pageNo, level, prev, next, records) {
+				t.logPageWrite(pageBytes)
+				if err := h.commit(true); err != nil {
+					return false, nil, fil.NullPageOffset, exact, err
+				}
+				return false, nil, fil.NullPageOffset, exact, nil
+			}
+			if len(records) <= 1 {
 				_ = h.commit(false)
 				return false, nil, fil.NullPageOffset, exact, errors.New("btr: leaf rebuild failed")
 			}
-			if err := h.commit(true); err != nil {
-				return false, nil, fil.NullPageOffset, exact, err
-			}
-			return false, nil, fil.NullPageOffset, exact, nil
 		}
 
-		mid := len(records) / 2
-		leftRecords := records[:mid]
-		rightRecords := records[mid:]
+		leftRecords, rightRecords, ok := t.splitLeafRecords(records)
+		if !ok {
+			_ = h.commit(false)
+			return false, nil, fil.NullPageOffset, exact, errors.New("btr: leaf split failed")
+		}
 		rightPage, err := t.allocPage(0)
 		if err != nil {
 			_ = h.commit(false)
@@ -301,10 +490,11 @@ func (t *PageTree) insertPage(pageNo uint32, key, value []byte) (bool, []byte, u
 		sepKey := recordKeyOrEmpty(rightRecords)
 		prev := page.PageGetPrev(pageBytes)
 		next := page.PageGetNext(pageBytes)
-		if !rebuildIndexPage(pageBytes, pageNo, 0, prev, rightPage, leftRecords) {
+		if !rebuildIndexPage(pageBytes, t.SpaceID, pageNo, 0, prev, rightPage, leftRecords) {
 			_ = h.commit(false)
 			return false, nil, fil.NullPageOffset, exact, errors.New("btr: leaf split rebuild failed")
 		}
+		t.logPageWrite(pageBytes)
 		if err := h.commit(true); err != nil {
 			return false, nil, fil.NullPageOffset, exact, err
 		}
@@ -313,10 +503,11 @@ func (t *PageTree) insertPage(pageNo uint32, key, value []byte) (bool, []byte, u
 		if err != nil {
 			return false, nil, fil.NullPageOffset, exact, err
 		}
-		if !rebuildIndexPage(rh.data, rightPage, 0, pageNo, next, rightRecords) {
+		if !rebuildIndexPage(rh.data, t.SpaceID, rightPage, 0, pageNo, next, rightRecords) {
 			_ = rh.commit(false)
 			return false, nil, fil.NullPageOffset, exact, errors.New("btr: leaf split right rebuild failed")
 		}
+		t.logPageWrite(rh.data)
 		if err := rh.commit(true); err != nil {
 			return false, nil, fil.NullPageOffset, exact, err
 		}
@@ -326,6 +517,7 @@ func (t *PageTree) insertPage(pageNo uint32, key, value []byte) (bool, []byte, u
 				return false, nil, fil.NullPageOffset, exact, err
 			}
 			page.PageSetPrev(nh.data, rightPage)
+			t.logPageWrite(nh.data)
 			if err := nh.commit(true); err != nil {
 				return false, nil, fil.NullPageOffset, exact, err
 			}
@@ -355,10 +547,11 @@ func (t *PageTree) insertPage(pageNo uint32, key, value []byte) (bool, []byte, u
 	if len(records) <= t.maxRecords() {
 		prev := page.PageGetPrev(pageBytes)
 		next := page.PageGetNext(pageBytes)
-		if !rebuildIndexPage(pageBytes, pageNo, level, prev, next, records) {
+		if !rebuildIndexPage(pageBytes, t.SpaceID, pageNo, level, prev, next, records) {
 			_ = h.commit(false)
 			return false, nil, fil.NullPageOffset, replaced, errors.New("btr: internal rebuild failed")
 		}
+		t.logPageWrite(pageBytes)
 		if err := h.commit(true); err != nil {
 			return false, nil, fil.NullPageOffset, replaced, err
 		}
@@ -376,10 +569,11 @@ func (t *PageTree) insertPage(pageNo uint32, key, value []byte) (bool, []byte, u
 	sepKey = recordKeyOrEmpty(rightRecords)
 	prev := page.PageGetPrev(pageBytes)
 	next := page.PageGetNext(pageBytes)
-	if !rebuildIndexPage(pageBytes, pageNo, level, prev, next, leftRecords) {
+	if !rebuildIndexPage(pageBytes, t.SpaceID, pageNo, level, prev, next, leftRecords) {
 		_ = h.commit(false)
 		return false, nil, fil.NullPageOffset, replaced, errors.New("btr: internal split left rebuild failed")
 	}
+	t.logPageWrite(pageBytes)
 	if err := h.commit(true); err != nil {
 		return false, nil, fil.NullPageOffset, replaced, err
 	}
@@ -388,10 +582,11 @@ func (t *PageTree) insertPage(pageNo uint32, key, value []byte) (bool, []byte, u
 	if err != nil {
 		return false, nil, fil.NullPageOffset, replaced, err
 	}
-	if !rebuildIndexPage(rh.data, rightPage, level, fil.NullPageOffset, fil.NullPageOffset, rightRecords) {
+	if !rebuildIndexPage(rh.data, t.SpaceID, rightPage, level, fil.NullPageOffset, fil.NullPageOffset, rightRecords) {
 		_ = rh.commit(false)
 		return false, nil, fil.NullPageOffset, replaced, errors.New("btr: internal split right rebuild failed")
 	}
+	t.logPageWrite(rh.data)
 	if err := rh.commit(true); err != nil {
 		return false, nil, fil.NullPageOffset, replaced, err
 	}

@@ -21,6 +21,8 @@ type Store struct {
 	PrimaryKeyFields   []int
 	PrimaryKeyPrefixes []int
 	Tree               *btr.Tree
+	PageTree           *btr.PageTree
+	SpaceID            uint32
 	SecondaryIndexes   map[string]*SecondaryIndex
 	versions           map[string]*VersionedRow
 	file               ibos.File
@@ -54,6 +56,12 @@ func (store *Store) Insert(tuple *data.Tuple) error {
 	if store.hasSecondaryDuplicate(tuple, id) {
 		return ErrDuplicateKey
 	}
+	key := store.keyForInsert(tuple, id)
+	val := encodeRowValue(id, tuple)
+	pageKey := store.pageTreeKey(tuple, id)
+	if err := store.insertPageTree(pageKey, val); err != nil {
+		return err
+	}
 	store.nextRowID++
 	store.Rows = append(store.Rows, tuple)
 	if store.rowsByID != nil {
@@ -63,8 +71,6 @@ func (store *Store) Insert(tuple *data.Tuple) error {
 		store.idByRow[tuple] = id
 	}
 	if store.Tree != nil {
-		key := store.keyForInsert(tuple, id)
-		val := encodeRowValue(id, tuple)
 		cur := btr.NewCur(store.Tree)
 		if !cur.OptimisticInsert(key, val) {
 			store.Tree.Insert(key, val)

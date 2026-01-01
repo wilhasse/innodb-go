@@ -234,6 +234,7 @@ func TableCreate(_ *trx.Trx, schema *TableSchema, tableID *uint64) ErrCode {
 	if !fil.SpaceCreate(schema.Name, spaceID, 0, fil.SpaceTablespace) {
 		return DB_ERROR
 	}
+	store.SpaceID = spaceID
 	indexName := "PRIMARY"
 	var clusteredSchema *IndexSchema
 	for _, idx := range schema.Indexes {
@@ -257,6 +258,8 @@ func TableCreate(_ *trx.Trx, schema *TableSchema, tableID *uint64) ErrCode {
 	}
 	index.ID = indexID
 	btr.Create(index)
+	store.PageTree = btr.NewPageTree(spaceID, row.CompareKeys)
+	store.PageTree.RootPage = index.RootPage
 	if err := attachTableFile(store, schema.Name); err != DB_SUCCESS {
 		btr.FreeRoot(index)
 		fil.SpaceDrop(spaceID)
@@ -442,9 +445,6 @@ func loadSchemaFromDict() ErrCode {
 		store.PrimaryKeyPrefix = primaryKeyPrefix
 		store.PrimaryKeyFields = primaryKeyFields
 		store.PrimaryKeyPrefixes = primaryKeyPrefixes
-		if err := attachTableFile(store, schema.Name); err != DB_SUCCESS {
-			return err
-		}
 		spaceID := dtable.Space
 		if fil.SpaceGetByID(spaceID) == nil {
 			_ = fil.SpaceCreate(dtable.Name, spaceID, 0, fil.SpaceTablespace)
@@ -455,6 +455,14 @@ func loadSchemaFromDict() ErrCode {
 				idx = candidate
 				break
 			}
+		}
+		store.SpaceID = spaceID
+		store.PageTree = btr.NewPageTree(spaceID, row.CompareKeys)
+		if idx != nil {
+			store.PageTree.RootPage = idx.RootPage
+		}
+		if err := attachTableFile(store, schema.Name); err != DB_SUCCESS {
+			return err
 		}
 		id := dict.DulintToUint64(dtable.ID)
 		if id > maxID {

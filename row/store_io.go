@@ -7,6 +7,7 @@ import (
 
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
+	"github.com/wilhasse/innodb-go/fil"
 	ibos "github.com/wilhasse/innodb-go/os"
 )
 
@@ -37,7 +38,22 @@ func (store *Store) AttachFile(path string) error {
 	}
 	store.file = file
 	store.filePath = path
-	if exists {
+	if store.SpaceID != 0 {
+		if err := fil.SpaceSetFile(store.SpaceID, file); err != nil {
+			_ = ibos.FileClose(file)
+			store.file = nil
+			store.filePath = ""
+			return err
+		}
+	}
+	if store.PageTree != nil {
+		if err := store.loadFromPages(); err != nil {
+			_ = ibos.FileClose(file)
+			store.file = nil
+			store.filePath = ""
+			return err
+		}
+	} else if exists {
 		if err := store.loadFromFile(); err != nil {
 			_ = ibos.FileClose(file)
 			store.file = nil
@@ -57,6 +73,9 @@ func (store *Store) CloseFile() error {
 	if store == nil {
 		return nil
 	}
+	if store.SpaceID != 0 {
+		fil.SpaceCloseFile(store.SpaceID)
+	}
 	err := ibos.FileClose(store.file)
 	store.file = nil
 	store.filePath = ""
@@ -69,6 +88,9 @@ func (store *Store) DeleteFile() error {
 		return nil
 	}
 	path := store.filePath
+	if store.SpaceID != 0 {
+		fil.SpaceCloseFile(store.SpaceID)
+	}
 	_ = ibos.FileClose(store.file)
 	store.file = nil
 	store.filePath = ""
@@ -95,11 +117,16 @@ func (store *Store) TruncateFile() error {
 	store.file = file
 	store.filePath = path
 	store.fileOffset = 0
+	if store.SpaceID != 0 {
+		if err := fil.SpaceSetFile(store.SpaceID, file); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
 func (store *Store) appendLog(op byte, key, value []byte) {
-	if store == nil || store.file == nil {
+	if store == nil || store.file == nil || store.PageTree != nil {
 		return
 	}
 	var header [9]byte
@@ -136,6 +163,48 @@ func (store *Store) loadFromFile() error {
 	}
 	entries := parseLogEntries(buf)
 	store.applyLogEntries(entries)
+	return nil
+}
+
+func (store *Store) loadFromPages() error {
+	if store == nil || store.PageTree == nil {
+		return nil
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+
+	store.Rows = nil
+	store.Tree = btr.NewTree(storeTreeOrder, CompareKeys)
+	store.rowsByID = make(map[uint64]*data.Tuple)
+	store.idByRow = make(map[*data.Tuple]uint64)
+	store.versions = make(map[string]*VersionedRow)
+	store.nextRowID = 1
+
+	var maxID uint64
+	err := store.PageTree.ForEach(func(_ []byte, value []byte) bool {
+		id, tuple, err := decodeRowValue(value)
+		if err != nil || tuple == nil {
+			return true
+		}
+		store.rowsByID[id] = tuple
+		store.idByRow[tuple] = id
+		store.Rows = append(store.Rows, tuple)
+		memKey := store.keyForInsert(tuple, id)
+		if len(memKey) > 0 {
+			store.Tree.Insert(memKey, value)
+			store.versions[string(memKey)] = NewVersionedRow(0, tuple)
+		}
+		if id > maxID {
+			maxID = id
+		}
+		return true
+	})
+	if err != nil {
+		return err
+	}
+	if maxID > 0 {
+		store.nextRowID = maxID + 1
+	}
 	return nil
 }
 

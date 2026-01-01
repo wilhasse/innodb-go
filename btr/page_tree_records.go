@@ -12,11 +12,12 @@ import (
 
 const recordExtra = rec.RecNNewExtraBytes
 
-func initIndexPageBytes(pageBytes []byte, pageNo uint32, level uint16) bool {
+func initIndexPageBytes(pageBytes []byte, spaceID uint32, pageNo uint32, level uint16) bool {
 	if pageBytes == nil {
 		return false
 	}
 	clear(pageBytes)
+	page.PageSetSpaceID(pageBytes, spaceID)
 	page.PageSetPageNo(pageBytes, pageNo)
 	page.PageSetType(pageBytes, fil.PageTypeIndex)
 	page.PageSetPrev(pageBytes, fil.NullPageOffset)
@@ -46,8 +47,8 @@ func insertSystemRecord(pageBytes []byte, extra []byte, data []byte) bool {
 	return ok
 }
 
-func rebuildIndexPage(pageBytes []byte, pageNo uint32, level uint16, prev, next uint32, records [][]byte) bool {
-	if !initIndexPageBytes(pageBytes, pageNo, level) {
+func rebuildIndexPage(pageBytes []byte, spaceID uint32, pageNo uint32, level uint16, prev, next uint32, records [][]byte) bool {
+	if !initIndexPageBytes(pageBytes, spaceID, pageNo, level) {
 		return false
 	}
 	page.PageSetPrev(pageBytes, prev)

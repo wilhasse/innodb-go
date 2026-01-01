@@ -52,6 +52,15 @@ func PageGetPageNo(page []byte) uint32 {
 	return mach.ReadFrom4(page[offs:])
 }
 
+// PageGetSpaceID reads the space id from the file header.
+func PageGetSpaceID(page []byte) uint32 {
+	offs := int(fil.PageArchLogNoOrSpaceID)
+	if offs+4 > len(page) {
+		return 0
+	}
+	return mach.ReadFrom4(page[offs:])
+}
+
 // PageSetPageNo writes the page number into the file header.
 func PageSetPageNo(page []byte, pageNo uint32) {
 	offs := int(fil.PageOffset)
@@ -59,6 +68,15 @@ func PageSetPageNo(page []byte, pageNo uint32) {
 		return
 	}
 	mach.WriteTo4(page[offs:], pageNo)
+}
+
+// PageSetSpaceID writes the space id into the file header.
+func PageSetSpaceID(page []byte, spaceID uint32) {
+	offs := int(fil.PageArchLogNoOrSpaceID)
+	if offs+4 > len(page) {
+		return
+	}
+	mach.WriteTo4(page[offs:], spaceID)
 }
 
 // PageGetLevel returns the page level from the header.

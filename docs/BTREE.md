@@ -146,3 +146,10 @@
   - `row.Store` tracks `SecondaryIndex` trees keyed by indexed columns; DML updates secondary trees.
   - `IndexCreate`/`TableCreate` build secondary indexes and `CursorOpenIndexUsingName` routes to the right tree.
   - `tests/secondary_index_test.go` validates secondary index scan order.
+
+## IBGO-246: Row DML via page-based BTR
+- C refs: `row/row0ins.c`, `row/row0upd.c`, `row/row0del.c`, `btr/btr0btr.c`
+- Go mapping:
+  - `row.Store` wires a `btr.PageTree` for clustered data; table attach loads rows from page records.
+  - DML now upserts/deletes PageTree records and logs page images with `mtr` for redo.
+  - `tests/ibgo246_crud_persist_test.go` covers insert/update/delete persistence over restart.
