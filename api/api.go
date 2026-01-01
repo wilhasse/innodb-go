@@ -73,6 +73,7 @@ func Startup(format string) ErrCode {
 	trx.TrxVarInit()
 	trx.TrxSysVarInit()
 	trx.PurgeVarInit()
+	trx.PurgeSysCreate()
 	trx.RsegVarInit()
 	lock.SysCreate(0)
 	if !fil.SpaceCreate("system", 0, 0, fil.SpaceTablespace) {
@@ -148,12 +149,14 @@ func Startup(format string) ErrCode {
 		btr.SearchSysCreate(1024)
 	}
 	activeDBFormat = format
+	startPurgeWorker()
 	started = true
 	return DB_SUCCESS
 }
 
 // Shutdown resets API state.
 func Shutdown(_ ShutdownFlag) ErrCode {
+	stopPurgeWorker()
 	if err := CfgShutdown(); err != DB_SUCCESS {
 		return err
 	}
@@ -166,6 +169,7 @@ func Shutdown(_ ShutdownFlag) ErrCode {
 	buf.SetDefaultPools(nil)
 	dict.DictClose()
 	lock.SysClose()
+	trx.PurgeSysClose()
 	fil.VarInit()
 	started = false
 	activeDBFormat = ""

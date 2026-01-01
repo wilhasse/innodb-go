@@ -2,8 +2,10 @@ package api
 
 import (
 	"testing"
+	"time"
 
 	"github.com/wilhasse/innodb-go/trx"
+	"github.com/wilhasse/innodb-go/ut"
 )
 
 func TestPurgeAfterViewsClosed(t *testing.T) {
@@ -17,9 +19,7 @@ func TestPurgeAfterViewsClosed(t *testing.T) {
 	if err := Startup("barracuda"); err != DB_SUCCESS {
 		t.Fatalf("Startup: %v", err)
 	}
-	trx.PurgeVarInit()
-	trx.PurgeSysCreate()
-	trx.PurgeSys.PagesHandled = 0
+	resetPurgePagesHandled()
 
 	if err := DatabaseCreate("purge_db"); err != DB_SUCCESS {
 		t.Fatalf("DatabaseCreate: %v", err)
@@ -104,13 +104,53 @@ func TestPurgeAfterViewsClosed(t *testing.T) {
 	if err := TrxCommit(writer); err != DB_SUCCESS {
 		t.Fatalf("TrxCommit writer: %v", err)
 	}
-	if trx.PurgeSys.PagesHandled != 0 {
-		t.Fatalf("purge ran early: %d", trx.PurgeSys.PagesHandled)
-	}
+	assertNoPurgeFor(t, 150*time.Millisecond)
 	if err := TrxRollback(reader); err != DB_SUCCESS {
 		t.Fatalf("TrxRollback reader: %v", err)
 	}
-	if trx.PurgeSys.PagesHandled == 0 {
+	if got := waitForPurgePages(ut.Ulint(1), time.Second); got == 0 {
 		t.Fatalf("expected purge after views closed")
 	}
+}
+
+func resetPurgePagesHandled() {
+	if trx.PurgeSys == nil {
+		return
+	}
+	trx.PurgeSys.Mu.Lock()
+	trx.PurgeSys.PagesHandled = 0
+	trx.PurgeSys.Mu.Unlock()
+}
+
+func purgePagesHandled() ut.Ulint {
+	if trx.PurgeSys == nil {
+		return 0
+	}
+	trx.PurgeSys.Mu.Lock()
+	handled := trx.PurgeSys.PagesHandled
+	trx.PurgeSys.Mu.Unlock()
+	return handled
+}
+
+func assertNoPurgeFor(t *testing.T, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if handled := purgePagesHandled(); handled != 0 {
+			t.Fatalf("purge ran early: %d", handled)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func waitForPurgePages(min ut.Ulint, timeout time.Duration) ut.Ulint {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		handled := purgePagesHandled()
+		if handled >= min {
+			return handled
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	return purgePagesHandled()
 }

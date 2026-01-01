@@ -15,6 +15,7 @@ var (
 )
 
 func resetAPIState() {
+	stopPurgeWorker()
 	initialized = false
 	started = false
 	activeDBFormat = ""

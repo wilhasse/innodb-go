@@ -21,14 +21,14 @@ rough indicator and are taken from `wc -l` over each Go package directory.
 | rem (record mgr) | ~2,000 | 378 | Partial | Basic record format helpers only. |
 | rec | ~2,000 | 620 | Partial | Record encoding/decoding, headers, and comparison helpers. |
 | undo | ~2,000 | 0 | Partial | In-memory undo records + payloads live in trx/api (no separate package). |
-| purge | ~1,500 | 0 | Minimal | Purge trims MVCC versions when views close; no background purge. |
+| purge | ~1,500 | 0 | Partial | Background purge worker trims MVCC versions when views close. |
 
 ## Missing Core Features
 
 1) MVCC (Multi-Version Concurrency Control)
 - In-memory undo records + version chains only; no persistent undo logs
 - Read views exist but isolation semantics are minimal
-- Purge only trims history when views close (no background purge)
+- Purge trims history when views close (no full purge pipeline)
 
 2) Transaction System
 - No real transaction isolation (lock-free; MVCC only)
@@ -55,7 +55,7 @@ rough indicator and are taken from `wc -l` over each Go package directory.
 
 6) Background Goroutines
 - No master goroutine
-- No purge goroutine
+- Purge goroutine runs basic history cleanup
 - No page cleaner goroutine
 - No log writer goroutine
 
@@ -104,7 +104,7 @@ The Go port should be able to:
 - Persist redo log headers and scan log records on startup
 - Roll back transactions and savepoints (in-memory)
 - Provide basic MVCC read views for inserts/updates/deletes (in-memory)
-- Purge MVCC history when no read views remain
+- Purge MVCC history when no read views remain (background worker)
 
 It cannot:
 - Survive a crash (no recovery)
