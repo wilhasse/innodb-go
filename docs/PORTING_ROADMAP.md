@@ -95,3 +95,18 @@ M3: Buffer/page structure tests (buf/page/rem).
 M4: B+ tree cursor/search tests (btr).
 M5: Transaction/lock correctness tests (trx/lock/row).
 M6: Port and run C tests from oss-embedded-innodb/tests via Go harness.
+
+## Lock System (Go Status)
+
+Architecture:
+- `lock.LockSys` maintains table and record hash tables plus per-transaction lock lists.
+- Record locks are per-page queues with heap bitmap bits for records.
+- Compatibility matrix supports IS/IX/S/X with wait graph tracking.
+- Wait-for graph uses DFS cycle detection and reports deadlocks.
+
+Test coverage:
+- Lock compatibility matrix and mode ordering (lock package).
+- Record lock bitmap/iterator behavior.
+- Table/record lock requests, conflicts, and upgrades.
+- Deadlock detection and no-false-positive waits.
+- API tests for DML lock waits and lock release on commit/rollback.

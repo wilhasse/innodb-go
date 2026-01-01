@@ -14,7 +14,7 @@ rough indicator and are taken from `wc -l` over each Go package directory.
 | fil (files) | ~3,500 | 460 | Minimal | Tablespace registry with attached files; page read/write helpers auto-extend size. |
 | buf (buffer pool) | ~8,000 | 1,120 | Minimal | Simplified pool + LRU; fetch/flush uses fil page IO. |
 | log (redo log) | ~3,000 | 900 | Partial | File-backed header + append-only records; checkpoint LSN persisted; recovery scan populates recv hash (LSN-only apply). |
-| lock (locking) | ~5,700 | 352 | Minimal | No row locks, no deadlock detection. |
+| lock (locking) | ~5,700 | 520 | Partial | Table/record locks, wait graph + deadlock detection; no real waiting/wakeup. |
 | trx (transactions) | ~4,500 | 1,273 | Partial | Undo records + rollback/savepoints; read view assignment; no lock-based isolation. |
 | row (row ops) | ~7,000 | 1,900 | Partial | Basic row ops + BTR integration; MVCC version chains; row-store log replay on attach. |
 | read (read views) | ~500 | 194 | Partial | Read view snapshots + visibility checks in cursors. |
@@ -36,10 +36,10 @@ rough indicator and are taken from `wc -l` over each Go package directory.
 - No distributed transaction support (XA)
 
 3) Locking
-- No row-level locks
+- Table/record locks are in-memory only
 - No gap locks / next-key locks
-- No deadlock detection
-- No lock wait queues
+- No lock wait queues or wait-timeouts
+- Deadlock detection returns status only (no automatic rollback)
 
 4) Durability
 - Redo log persistence is minimal (header + append-only records)
