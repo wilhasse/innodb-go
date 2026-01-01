@@ -41,12 +41,17 @@ func TestRecvScanLogRecs(t *testing.T) {
 	RecvSysInit(0)
 	var contiguous uint64
 	var scanned uint64
-	buf := []byte("abcd")
+	buf := EncodeRecord(Record{
+		Type:    1,
+		SpaceID: 2,
+		PageNo:  3,
+		Payload: []byte("x"),
+	})
 	done := RecvScanLogRecs(true, buf, 100, &contiguous, &scanned)
-	if done {
-		t.Fatalf("expected scan to continue")
+	if !done {
+		t.Fatalf("expected scan to finish")
 	}
-	if contiguous != 104 || scanned != 104 {
+	if contiguous != 100+uint64(len(buf)) || scanned != 100+uint64(len(buf)) {
 		t.Fatalf("unexpected scan lsn values")
 	}
 	if RecvSysState.NAddrs == 0 {

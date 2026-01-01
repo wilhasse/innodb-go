@@ -255,17 +255,31 @@ func RecvScanLogRecs(storeToHash bool, buf []byte, startLSN uint64, contiguousLS
 	if RecvSysState == nil {
 		RecvSysCreate()
 	}
-	end := startLSN + uint64(len(buf))
+	offset := 0
+	for offset < len(buf) {
+		rec, size, err := DecodeRecord(buf[offset:])
+		if err != nil {
+			if err == errShortRecord {
+				break
+			}
+			RecvSysState.FoundCorruptLog = true
+			break
+		}
+		recStart := startLSN + uint64(offset)
+		recEnd := recStart + uint64(size)
+		if storeToHash {
+			RecvAddRecord(rec.SpaceID, rec.PageNo, rec.Type, rec.Payload, recStart, recEnd)
+		}
+		offset += size
+	}
+	end := startLSN + uint64(offset)
 	if groupScannedLSN != nil {
 		*groupScannedLSN = end
 	}
 	if contiguousLSN != nil && end > *contiguousLSN {
 		*contiguousLSN = end
 	}
-	if storeToHash && len(buf) > 0 {
-		RecvAddRecord(0, 0, 0, buf, startLSN, end)
-	}
-	return len(buf) == 0
+	return offset == len(buf)
 }
 
 // RecvResetLogs resets the log system to a new start lsn.
