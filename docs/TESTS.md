@@ -36,3 +36,35 @@ Environment overrides:
 - Some tests require cleaning data/log files between runs.
 - On Windows, use the CMake/VS build flow and set `PATH` instead of
   `LD_LIBRARY_PATH`.
+
+## Test Comparison (Post-IBGO-195)
+
+This section tracks the Go vs C test timing after the SYS metadata
+persistence stabilizing fixes landed. Fill in the "Current" column after
+running the full sweep.
+
+| Metric | Previous | Current |
+| --- | --- | --- |
+| C Tests | TBD | TBD |
+| Go Tests | TBD | TBD |
+| Speedup | N/A | TBD |
+
+Reference (Zig baseline):
+
+| Metric | C Tests | Zig Tests |
+| --- | --- | --- |
+| Time | 590s | 51s |
+| Speedup |  | 11.56x faster |
+
+Stabilizing fixes included:
+- Dedup SYS_* rows on load/insert to avoid duplicates across runs
+- Auto-extend tablespace size on page writes
+- Shutdown cleanup even if startup was skipped
+- Schema reload from persisted SYS rows on startup
+
+Expected metadata files (when `data_home_dir` is set):
+
+```
+ib_dict.sys       (dictionary persistence)
+<db>/<table>.ibd  (table storage log)
+```
