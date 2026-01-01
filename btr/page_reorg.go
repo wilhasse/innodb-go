@@ -28,12 +28,12 @@ func PageReorganize(t *Tree) int {
 	return PageReorganizeLow(t)
 }
 
-// Compress is a placeholder for page compression.
+// Compress compacts delete-marked keys in the in-memory tree.
 func Compress(t *Tree) int {
 	return PageReorganizeLow(t)
 }
 
-// DiscardPage discards a page from the registry (stubbed).
+// DiscardPage discards a page from the registry and free list.
 func DiscardPage(p *page.Page) {
 	if p == nil {
 		return
@@ -41,15 +41,19 @@ func DiscardPage(p *page.Page) {
 	PageFreeLow(p.SpaceID, p.PageNo)
 }
 
-// DiscardOnlyPageOnLevel is a stubbed discard helper.
-func DiscardOnlyPageOnLevel(_ *Tree, _ int) {
+// DiscardOnlyPageOnLevel compacts delete marks; levels are not tracked in-memory.
+func DiscardOnlyPageOnLevel(t *Tree, level int) {
+	if t == nil || level < 0 {
+		return
+	}
+	PageReorganizeLow(t)
 }
 
-// LevelListRemove is a stubbed level list removal helper.
+// LevelListRemove is a no-op for the in-memory tree without level lists.
 func LevelListRemove(_ *Tree, _ int) {
 }
 
-// SetMinRecMark returns the minimum record (stubbed mark).
+// SetMinRecMark returns the minimum user record on the page.
 func SetMinRecMark(p *page.Page) *page.Record {
 	if p == nil {
 		return nil

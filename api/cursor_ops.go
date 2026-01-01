@@ -11,9 +11,26 @@ import (
 	"github.com/wilhasse/innodb-go/row"
 )
 
-// CursorSetLockMode sets the cursor lock mode (stub).
-func CursorSetLockMode(_ *Cursor, _ LockMode) ErrCode {
-	return DB_SUCCESS
+// CursorSetLockMode sets the cursor lock mode and acquires a table lock if needed.
+func CursorSetLockMode(crsr *Cursor, mode LockMode) ErrCode {
+	if crsr == nil || crsr.Table == nil {
+		return DB_ERROR
+	}
+	crsr.LockMode = mode
+	if crsr.Trx == nil {
+		return DB_SUCCESS
+	}
+	var lockMode lock.Mode
+	switch mode {
+	case LockIX:
+		lockMode = lock.ModeIX
+	case LockIS:
+		lockMode = lock.ModeIS
+	default:
+		return DB_INVALID_INPUT
+	}
+	_, status := lock.LockTable(crsr.Trx, tableLockName(crsr.Table), lockMode)
+	return lockStatusToErr(status)
 }
 
 // CursorSetMatchMode updates the cursor match mode.

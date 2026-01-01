@@ -50,6 +50,7 @@ type Cursor struct {
 	virtualRow *data.Tuple
 	Trx        *trx.Trx
 	MatchMode  MatchMode
+	LockMode   LockMode
 }
 
 // CursorOpenTable opens a cursor on a table.
@@ -65,7 +66,7 @@ func CursorOpenTable(name string, ibTrx *trx.Trx, out **Cursor) ErrCode {
 	if table.Store != nil {
 		tree = table.Store.Tree
 	}
-	cursor := &Cursor{Table: table, Tree: tree, Trx: ibTrx, MatchMode: IB_CLOSEST_MATCH}
+	cursor := &Cursor{Table: table, Tree: tree, Trx: ibTrx, MatchMode: IB_CLOSEST_MATCH, LockMode: LockIS}
 	if tree != nil {
 		cursor.pcur = btr.NewPcur(tree)
 	}
@@ -85,8 +86,8 @@ func CursorClose(crsr *Cursor) ErrCode {
 }
 
 // CursorLock is a no-op for the in-memory cursor.
-func CursorLock(_ *Cursor, _ LockMode) ErrCode {
-	return DB_SUCCESS
+func CursorLock(crsr *Cursor, mode LockMode) ErrCode {
+	return CursorSetLockMode(crsr, mode)
 }
 
 // CursorAttachTrx binds a transaction to a cursor.

@@ -50,7 +50,7 @@
 - C refs: `btr/btr0cur.c` (btr_cur_insert_if_possible, btr_cur_optimistic_insert)
 - Go mapping:
   - `Cur.InsertIfPossible` inserts into a leaf when there is capacity and rejects duplicates.
-  - `Cur.OptimisticInsert` wraps the insert with lock/undo/report stubs.
+  - `Cur.OptimisticInsert` wraps the insert with lock/undo/report placeholders for the in-memory tree.
 
 ## IBGO-144: Page split + root raise
 - C refs: `btr/btr0btr.c` (split selection, insert fits, split insert, root raise)
@@ -76,13 +76,13 @@
 - C refs: `btr/btr0cur.c` (update-in-place, optimistic/pessimistic update)
 - Go mapping:
   - `Cur.UpdateInPlace`, `Cur.OptimisticUpdate`, `Cur.PessimisticUpdate` implement size-preserving and size-changing updates.
-  - `Cur.UpdateAllocZip`/`Cur.ParseUpdateInPlace` are stubbed helpers.
+  - `Cur.UpdateAllocZip` triggers best-effort compaction; `Cur.ParseUpdateInPlace` defers to `UpdateInPlace`.
 
 ## IBGO-148: Page reorg/compress
 - C refs: `btr/btr0btr.c` (reorg/compress/discard)
 - Go mapping:
   - `PageReorganizeLow`/`PageReorganize` purge delete-marked keys.
-  - `Compress`, `DiscardPage`, and level helpers are stubbed for now.
+  - `Compress` and `DiscardPage` compact/free in-memory pages; level helpers are no-ops without a level list.
 
 ## IBGO-149: Persistent cursor
 - C refs: `btr/btr0pcur.c`

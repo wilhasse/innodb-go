@@ -26,17 +26,59 @@ func TrxIsInterrupted(_ *trx.Trx) Bool {
 	return IBFalse
 }
 
-// HandleErrors is a stub for error handling during query execution.
-func HandleErrors(newErr *ErrCode, _ *trx.Trx, _ *que.Thr, _ *trx.Savepoint) Bool {
-	if newErr != nil && *newErr == DB_SUCCESS {
-		*newErr = DB_ERROR
+// HandleErrors applies basic lock/deadlock handling and updates thread state.
+func HandleErrors(newErr *ErrCode, ibTrx *trx.Trx, thr *que.Thr, savept *trx.Savepoint) Bool {
+	if newErr == nil {
+		return IBFalse
+	}
+	err := *newErr
+	if err == DB_SUCCESS {
+		return IBFalse
+	}
+	if thr != nil {
+		switch err {
+		case DB_LOCK_WAIT, DB_LOCK_WAIT_TIMEOUT:
+			thr.State = que.ThrLockWait
+			thr.LockState = que.LockRow
+		default:
+			thr.State = que.ThrError
+		}
+	}
+	switch err {
+	case DB_DEADLOCK:
+		if ibTrx != nil {
+			if savept != nil {
+				_ = rollbackUndoRecordsTo(ibTrx, savept.UndoRecLen)
+				trx.RollbackToSavepoint(ibTrx, *savept)
+			} else {
+				_ = TrxRollback(ibTrx)
+			}
+		}
+		return IBTrue
+	case DB_LOCK_WAIT_TIMEOUT:
+		if SesRollbackOnTimeout == IBTrue && ibTrx != nil {
+			if savept != nil {
+				_ = rollbackUndoRecordsTo(ibTrx, savept.UndoRecLen)
+				trx.RollbackToSavepoint(ibTrx, *savept)
+			} else {
+				_ = TrxRollback(ibTrx)
+			}
+			return IBTrue
+		}
 	}
 	return IBFalse
 }
 
-// TrxLockTableWithRetry is a stub for table locking with retry.
-func TrxLockTableWithRetry(_ *trx.Trx, _ *dict.Table, _ lock.Mode) ErrCode {
-	return DB_UNSUPPORTED
+// TrxLockTableWithRetry attempts a table lock and returns the lock status.
+func TrxLockTableWithRetry(ibTrx *trx.Trx, table *dict.Table, mode lock.Mode) ErrCode {
+	if ibTrx == nil || table == nil {
+		return DB_ERROR
+	}
+	if table.Name == "" {
+		return DB_INVALID_INPUT
+	}
+	_, status := lock.LockTable(ibTrx, table.Name, mode)
+	return lockStatusToErr(status)
 }
 
 // UpdateStatisticsIfNeeded is a placeholder for statistics updates.

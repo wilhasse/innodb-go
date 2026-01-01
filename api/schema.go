@@ -165,7 +165,7 @@ func IndexSchemaSetUnique(index *IndexSchema) ErrCode {
 func TableSchemaDelete(_ *TableSchema) {
 }
 
-// SchemaLockExclusive is a no-op lock stub.
+// SchemaLockExclusive marks the transaction as holding the schema lock.
 func SchemaLockExclusive(trx *trx.Trx) ErrCode {
 	if trx == nil {
 		return DB_ERROR

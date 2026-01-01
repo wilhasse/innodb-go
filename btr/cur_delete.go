@@ -39,7 +39,14 @@ func (c *Cur) OptimisticDelete() bool {
 	return ok
 }
 
-// PessimisticDelete removes the current record with full latching (stubbed).
+// PessimisticDelete removes the current record and compacts delete marks.
 func (c *Cur) PessimisticDelete() bool {
-	return c.OptimisticDelete()
+	if c == nil || c.Tree == nil {
+		return false
+	}
+	ok := c.OptimisticDelete()
+	if ok {
+		PageReorganizeLow(c.Tree)
+	}
+	return ok
 }

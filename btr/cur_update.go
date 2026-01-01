@@ -1,7 +1,11 @@
 package btr
 
-// UpdateAllocZip is a stub for compressed page allocation during update.
+// UpdateAllocZip triggers a best-effort compaction for in-memory pages.
 func (c *Cur) UpdateAllocZip() {
+	if c == nil || c.Tree == nil {
+		return
+	}
+	PageReorganizeLow(c.Tree)
 }
 
 // ParseUpdateInPlace attempts to update the record in place.

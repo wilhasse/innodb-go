@@ -5,13 +5,24 @@ import (
 	"unicode"
 )
 
-// UcodeGetConnectionCharset returns the connection charset (stub).
+var (
+	defaultCharset = &Charset{ID: 33, Name: "utf8"}
+	charsetByID    = map[Ulint]*Charset{
+		0:                 defaultCharset,
+		defaultCharset.ID: defaultCharset,
+	}
+)
+
+// UcodeGetConnectionCharset returns the connection charset.
 func UcodeGetConnectionCharset() *Charset {
-	return nil
+	return defaultCharset
 }
 
-// UcodeGetCharset returns a charset descriptor by ID (stub).
-func UcodeGetCharset(_ Ulint) *Charset {
+// UcodeGetCharset returns a charset descriptor by ID.
+func UcodeGetCharset(id Ulint) *Charset {
+	if charset, ok := charsetByID[id]; ok {
+		return charset
+	}
 	return nil
 }
 
