@@ -8,6 +8,7 @@ import (
 
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/data"
+	"github.com/wilhasse/innodb-go/read"
 	"github.com/wilhasse/innodb-go/rec"
 	"github.com/wilhasse/innodb-go/row"
 	"github.com/wilhasse/innodb-go/trx"
@@ -40,13 +41,14 @@ const (
 
 // Cursor provides simple table iteration.
 type Cursor struct {
-	Table     *Table
-	Tree      *btr.Tree
-	treeCur   *btr.Cursor
-	pcur      *btr.Pcur
-	lastKey   []byte
-	Trx       *trx.Trx
-	MatchMode MatchMode
+	Table      *Table
+	Tree       *btr.Tree
+	treeCur    *btr.Cursor
+	pcur       *btr.Pcur
+	lastKey    []byte
+	virtualRow *data.Tuple
+	Trx        *trx.Trx
+	MatchMode  MatchMode
 }
 
 // CursorOpenTable opens a cursor on a table.
@@ -108,6 +110,7 @@ func CursorReset(crsr *Cursor) ErrCode {
 	}
 	crsr.treeCur = nil
 	crsr.lastKey = nil
+	crsr.virtualRow = nil
 	return DB_SUCCESS
 }
 
@@ -217,6 +220,10 @@ func CursorReadRow(crsr *Cursor, tpl *data.Tuple) ErrCode {
 	if crsr == nil || crsr.Table == nil || crsr.Tree == nil || tpl == nil {
 		return DB_ERROR
 	}
+	if crsr.virtualRow != nil {
+		copyTuple(tpl, crsr.virtualRow)
+		return DB_SUCCESS
+	}
 	if crsr.treeCur == nil || !crsr.treeCur.Valid() {
 		return DB_RECORD_NOT_FOUND
 	}
@@ -290,6 +297,7 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 	if crsr == nil || crsr.Table == nil || crsr.Tree == nil || tpl == nil {
 		return DB_ERROR
 	}
+	crsr.virtualRow = nil
 	keyFields := searchFieldCount(tpl)
 	if keyFields == 0 {
 		return DB_ERROR
@@ -312,6 +320,9 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 		return DB_ERROR
 	}
 	if !pcur.Cur.Search(searchKey, btr.SearchGE) {
+		if exactRequired && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
+			return DB_SUCCESS
+		}
 		return DB_RECORD_NOT_FOUND
 	}
 	for pcur.Cur.Valid() {
@@ -371,7 +382,34 @@ func CursorMoveTo(crsr *Cursor, tpl *data.Tuple, mode CursorMode, ret *int) ErrC
 		}
 		return DB_SUCCESS
 	}
+	if exactRequired && assignVirtualRow(crsr, searchKey, keyFields, pkFields, ret) {
+		return DB_SUCCESS
+	}
 	return DB_RECORD_NOT_FOUND
+}
+
+func assignVirtualRow(crsr *Cursor, searchKey []byte, keyFields, pkFields int, ret *int) bool {
+	if crsr == nil || crsr.Table == nil || crsr.Table.Store == nil {
+		return false
+	}
+	if pkFields > 0 && keyFields != pkFields {
+		return false
+	}
+	view := (*read.ReadView)(nil)
+	if crsr.Trx != nil {
+		view = crsr.Trx.ReadView
+	}
+	visible, ok := crsr.Table.Store.VersionForView(searchKey, view)
+	if !ok || visible == nil {
+		return false
+	}
+	crsr.virtualRow = visible
+	crsr.lastKey = searchKey
+	crsr.treeCur = nil
+	if ret != nil {
+		*ret = 0
+	}
+	return true
 }
 
 func ensurePcur(crsr *Cursor) *btr.Pcur {
