@@ -41,3 +41,31 @@ func (store *Store) VersionForView(key []byte, view *read.ReadView) (*data.Tuple
 	}
 	return vr.VersionForView(view), true
 }
+
+// RollbackVersions removes versions created by a transaction for the key.
+func (store *Store) RollbackVersions(key []byte, trxID uint64) {
+	if store == nil || len(key) == 0 || trxID == 0 {
+		return
+	}
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.versions == nil {
+		return
+	}
+	k := string(key)
+	vr := store.versions[k]
+	if vr == nil || len(vr.Versions) == 0 {
+		return
+	}
+	dst := vr.Versions[:0]
+	for _, v := range vr.Versions {
+		if v.TrxID != trxID {
+			dst = append(dst, v)
+		}
+	}
+	if len(dst) == 0 {
+		delete(store.versions, k)
+		return
+	}
+	vr.Versions = dst
+}

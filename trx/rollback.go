@@ -13,7 +13,7 @@ func SavepointTake(trx *Trx) Savepoint {
 	if trx == nil {
 		return Savepoint{}
 	}
-	savept := Savepoint{UndoLen: len(trx.UndoLog)}
+	savept := Savepoint{UndoLen: len(trx.UndoLog), UndoRecLen: len(trx.UndoRecords)}
 	trx.Savepoints = append(trx.Savepoints, savept)
 	return savept
 }

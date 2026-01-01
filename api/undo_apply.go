@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/wilhasse/innodb-go/data"
@@ -9,15 +10,26 @@ import (
 )
 
 func rollbackUndoRecords(ibTrx *trx.Trx) error {
+	return rollbackUndoRecordsTo(ibTrx, 0)
+}
+
+func rollbackUndoRecordsTo(ibTrx *trx.Trx, target int) error {
 	if ibTrx == nil || len(ibTrx.UndoRecords) == 0 {
 		return nil
 	}
-	for i := len(ibTrx.UndoRecords) - 1; i >= 0; i-- {
+	if target < 0 {
+		target = 0
+	}
+	if target > len(ibTrx.UndoRecords) {
+		target = len(ibTrx.UndoRecords)
+	}
+	for i := len(ibTrx.UndoRecords) - 1; i >= target; i-- {
 		rec := ibTrx.UndoRecords[i]
 		if err := applyUndoRecord(&rec); err != nil {
 			return err
 		}
 	}
+	ibTrx.UndoRecords = ibTrx.UndoRecords[:target]
 	return nil
 }
 
@@ -45,6 +57,7 @@ func applyUndoRecord(rec *trx.UndoRecord) error {
 		if !table.Store.RemoveTuple(row) {
 			return fmt.Errorf("api: undo insert remove failed")
 		}
+		table.Store.RollbackVersions(payload.PrimaryKey, payload.TrxID)
 	case trx.UndoUpdExistRec:
 		if len(payload.BeforeImage) == 0 {
 			return fmt.Errorf("api: undo update missing before image")
@@ -63,6 +76,12 @@ func applyUndoRecord(rec *trx.UndoRecord) error {
 		if err := table.Store.ReplaceTuple(row, before); err != nil {
 			return fmt.Errorf("api: undo update replace: %w", err)
 		}
+		if len(payload.PrimaryKey) > 0 {
+			table.Store.RollbackVersions(payload.PrimaryKey, payload.TrxID)
+		}
+		if oldKey := primaryKeyBytes(table.Store, before); len(oldKey) > 0 && !bytes.Equal(oldKey, payload.PrimaryKey) {
+			table.Store.RollbackVersions(oldKey, payload.TrxID)
+		}
 	case trx.UndoDelMarkRec:
 		if len(payload.BeforeImage) == 0 {
 			return fmt.Errorf("api: undo delete missing before image")
@@ -73,6 +92,11 @@ func applyUndoRecord(rec *trx.UndoRecord) error {
 		}
 		if err := table.Store.Insert(before); err != nil {
 			return fmt.Errorf("api: undo delete insert: %w", err)
+		}
+		if len(payload.PrimaryKey) > 0 {
+			table.Store.RollbackVersions(payload.PrimaryKey, payload.TrxID)
+		} else if key := primaryKeyBytes(table.Store, before); len(key) > 0 {
+			table.Store.RollbackVersions(key, payload.TrxID)
 		}
 	}
 	return nil

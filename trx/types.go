@@ -35,5 +35,6 @@ type Trx struct {
 
 // Savepoint tracks the undo log position.
 type Savepoint struct {
-	UndoLen int
+	UndoLen    int
+	UndoRecLen int
 }
