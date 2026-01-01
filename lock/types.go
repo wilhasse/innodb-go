@@ -4,6 +4,13 @@ package lock
 type Mode int
 
 const (
-	ModeShared Mode = iota
-	ModeExclusive
+	ModeIS Mode = iota
+	ModeIX
+	ModeS
+	ModeX
+)
+
+const (
+	ModeShared    = ModeS
+	ModeExclusive = ModeX
 )
