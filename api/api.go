@@ -98,6 +98,7 @@ func Shutdown(_ ShutdownFlag) ErrCode {
 		return err
 	}
 	resetSchemaState()
+	log.Shutdown()
 	buf.SetDefaultPool(nil)
 	dict.DictClose()
 	fil.VarInit()
