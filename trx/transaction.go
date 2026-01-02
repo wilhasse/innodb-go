@@ -52,6 +52,7 @@ func TrxCommit(trx *Trx) {
 	trx.UpdateUndo = nil
 	trx.Savepoints = nil
 	TrxSysRemoveActive(trx)
+	TrxXAClear(trx)
 }
 
 // TrxRollback rolls back the transaction using its undo log.
@@ -67,6 +68,7 @@ func TrxRollback(trx *Trx) {
 	trx.UpdateUndo = nil
 	trx.State = TrxRolledBack
 	TrxSysRemoveActive(trx)
+	TrxXAClear(trx)
 }
 
 // TrxRelease decrements the transaction counter.
@@ -77,5 +79,6 @@ func TrxRelease(trx *Trx) {
 	if trx.State == TrxActive {
 		TrxRollback(trx)
 	}
+	TrxXAClear(trx)
 	atomic.AddUint64(&TrxCount, ^uint64(0))
 }

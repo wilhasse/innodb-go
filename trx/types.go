@@ -23,6 +23,8 @@ const (
 type Trx struct {
 	ID          uint64
 	State       TrxState
+	XAState     XAState
+	XID         *XID
 	StartTime   time.Time
 	ReadView    *read.ReadView
 	UndoLog     []UndoAction
