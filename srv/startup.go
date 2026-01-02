@@ -8,13 +8,22 @@ func Startup() error {
 	if DefaultServer == nil {
 		DefaultServer = NewServer()
 	}
-	return DefaultServer.Start()
+	if err := DefaultServer.Start(); err != nil {
+		return err
+	}
+	if DefaultMaster != nil {
+		_ = DefaultMaster.Start()
+	}
+	return nil
 }
 
 // Shutdown stops the default server.
 func Shutdown() error {
 	if DefaultServer == nil {
 		return ErrNotRunning
+	}
+	if DefaultMaster != nil && DefaultMaster.Running() {
+		_ = DefaultMaster.Stop()
 	}
 	return DefaultServer.Stop()
 }

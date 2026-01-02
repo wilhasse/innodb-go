@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/wilhasse/innodb-go/srv"
 )
 
 var (
@@ -16,6 +18,9 @@ var (
 
 func resetAPIState() {
 	stopPurgeWorker()
+	if srv.DefaultMaster != nil && srv.DefaultMaster.Running() {
+		_ = srv.DefaultMaster.Stop()
+	}
 	initialized = false
 	started = false
 	activeDBFormat = ""

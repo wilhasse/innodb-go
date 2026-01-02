@@ -13,6 +13,7 @@ import (
 	"github.com/wilhasse/innodb-go/lock"
 	"github.com/wilhasse/innodb-go/log"
 	"github.com/wilhasse/innodb-go/page"
+	"github.com/wilhasse/innodb-go/srv"
 	"github.com/wilhasse/innodb-go/trx"
 )
 
@@ -158,14 +159,19 @@ func Startup(format string) ErrCode {
 		btr.SearchSysCreate(1024)
 	}
 	activeDBFormat = format
-	startPurgeWorker()
+	if srv.DefaultMaster != nil {
+		srv.DefaultMaster.SetPurgeHook(purgeIfNeeded)
+		_ = srv.DefaultMaster.Start()
+	}
 	started = true
 	return DB_SUCCESS
 }
 
 // Shutdown resets API state.
 func Shutdown(_ ShutdownFlag) ErrCode {
-	stopPurgeWorker()
+	if srv.DefaultMaster != nil && srv.DefaultMaster.Running() {
+		_ = srv.DefaultMaster.Stop()
+	}
 	if err := CfgShutdown(); err != DB_SUCCESS {
 		return err
 	}
