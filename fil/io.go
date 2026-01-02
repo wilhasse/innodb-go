@@ -3,6 +3,7 @@ package fil
 import (
 	"errors"
 	"io"
+	"sync/atomic"
 
 	iblog "github.com/wilhasse/innodb-go/log"
 	ibos "github.com/wilhasse/innodb-go/os"
@@ -98,6 +99,8 @@ func SpaceWritePage(spaceID, pageNo uint32, data []byte) error {
 			SpaceEnsureSize(spaceID, uint64(pageNo)+1)
 			return nil
 		}
+		atomic.AddUint64(&NPendingTablespaceFlushes, 1)
+		defer atomic.AddUint64(&NPendingTablespaceFlushes, ^uint64(0))
 		if space.Purpose != SpaceLog {
 			if err := DoublewriteWrite(spaceID, pageNo, data); err != nil {
 				return err
@@ -109,6 +112,8 @@ func SpaceWritePage(spaceID, pageNo uint32, data []byte) error {
 		SpaceEnsureSize(spaceID, uint64(pageNo)+1)
 		return nil
 	}
+	atomic.AddUint64(&NPendingTablespaceFlushes, 1)
+	defer atomic.AddUint64(&NPendingTablespaceFlushes, ^uint64(0))
 	if space.Purpose != SpaceLog {
 		if err := DoublewriteWrite(spaceID, pageNo, data); err != nil {
 			return err

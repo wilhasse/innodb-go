@@ -21,6 +21,9 @@ func resetAPIState() {
 	if srv.DefaultMaster != nil && srv.DefaultMaster.Running() {
 		_ = srv.DefaultMaster.Stop()
 	}
+	if srv.DefaultPageCleaner != nil && srv.DefaultPageCleaner.Running() {
+		_ = srv.DefaultPageCleaner.Stop()
+	}
 	initialized = false
 	started = false
 	activeDBFormat = ""

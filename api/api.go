@@ -163,6 +163,9 @@ func Startup(format string) ErrCode {
 		srv.DefaultMaster.SetPurgeHook(purgeIfNeeded)
 		_ = srv.DefaultMaster.Start()
 	}
+	if srv.DefaultPageCleaner != nil {
+		_ = srv.DefaultPageCleaner.Start()
+	}
 	started = true
 	return DB_SUCCESS
 }
@@ -171,6 +174,9 @@ func Startup(format string) ErrCode {
 func Shutdown(_ ShutdownFlag) ErrCode {
 	if srv.DefaultMaster != nil && srv.DefaultMaster.Running() {
 		_ = srv.DefaultMaster.Stop()
+	}
+	if srv.DefaultPageCleaner != nil && srv.DefaultPageCleaner.Running() {
+		_ = srv.DefaultPageCleaner.Stop()
 	}
 	if err := CfgShutdown(); err != DB_SUCCESS {
 		return err

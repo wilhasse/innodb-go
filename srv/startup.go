@@ -14,6 +14,9 @@ func Startup() error {
 	if DefaultMaster != nil {
 		_ = DefaultMaster.Start()
 	}
+	if DefaultPageCleaner != nil {
+		_ = DefaultPageCleaner.Start()
+	}
 	return nil
 }
 
@@ -21,6 +24,9 @@ func Startup() error {
 func Shutdown() error {
 	if DefaultServer == nil {
 		return ErrNotRunning
+	}
+	if DefaultPageCleaner != nil && DefaultPageCleaner.Running() {
+		_ = DefaultPageCleaner.Stop()
 	}
 	if DefaultMaster != nil && DefaultMaster.Running() {
 		_ = DefaultMaster.Stop()

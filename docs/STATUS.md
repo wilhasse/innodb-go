@@ -48,15 +48,15 @@ rough indicator and are taken from `wc -l` over each Go package directory.
 - No doublewrite buffer
 
 5) Buffer Pool
-- No flush lists
+- Flush list exists (LRU-backed), no neighbor flush or advanced scheduling
 - No read-ahead / prefetch
 - No adaptive hash integration with buffer pool pages
 - No buffer pool instances
 
 6) Background Goroutines
-- No master goroutine
+- Master scheduler runs purge/flush/stats tasks
 - Purge goroutine runs basic history cleanup
-- No page cleaner goroutine
+- Page cleaner goroutine flushes dirty pages
 - No log writer goroutine
 
 ## Why Go Tests May Be Faster
