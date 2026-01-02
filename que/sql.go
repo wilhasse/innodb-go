@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/wilhasse/innodb-go/data"
+	"github.com/wilhasse/innodb-go/eval"
 	"github.com/wilhasse/innodb-go/pars"
 	"github.com/wilhasse/innodb-go/row"
 )
@@ -197,66 +198,15 @@ func applyAssignments(tuple *data.Tuple, assigns []pars.Assignment, table *Table
 }
 
 func buildPredicate(expr pars.Expr, table *TableContext) (func(*data.Tuple) bool, error) {
-	switch e := expr.(type) {
-	case pars.BinaryExpr:
-		switch e.Op {
-		case pars.TokenAnd, pars.TokenOr:
-			left, err := buildPredicate(e.Left, table)
-			if err != nil {
-				return nil, err
-			}
-			right, err := buildPredicate(e.Right, table)
-			if err != nil {
-				return nil, err
-			}
-			if e.Op == pars.TokenAnd {
-				return func(row *data.Tuple) bool { return left(row) && right(row) }, nil
-			}
-			return func(row *data.Tuple) bool { return left(row) || right(row) }, nil
-		case pars.TokenEq:
-			return buildEqPredicate(e.Left, e.Right, table)
-		default:
-			return nil, fmt.Errorf("que: unsupported predicate op %v", e.Op)
-		}
-	default:
-		return nil, fmt.Errorf("que: unsupported predicate")
+	if expr == nil {
+		return nil, nil
 	}
-}
-
-func buildEqPredicate(left, right pars.Expr, table *TableContext) (func(*data.Tuple) bool, error) {
-	var ident pars.IdentExpr
-	var lit pars.LiteralExpr
-	switch l := left.(type) {
-	case pars.IdentExpr:
-		ident = l
-		r, ok := right.(pars.LiteralExpr)
-		if !ok {
-			return nil, fmt.Errorf("que: expected literal in predicate")
-		}
-		lit = r
-	case pars.LiteralExpr:
-		r, ok := right.(pars.IdentExpr)
-		if !ok {
-			return nil, fmt.Errorf("que: expected identifier in predicate")
-		}
-		ident = r
-		lit = l
-	default:
-		return nil, fmt.Errorf("que: unsupported predicate")
-	}
-	idx, ok := columnIndex(table.Columns, ident.Name)
-	if !ok {
-		return nil, fmt.Errorf("que: unknown column %s", ident.Name)
-	}
-	field, err := fieldFromExpr(lit)
-	if err != nil {
+	if err := validateExpr(expr, table); err != nil {
 		return nil, err
 	}
 	return func(row *data.Tuple) bool {
-		if row == nil || idx < 0 || idx >= len(row.Fields) {
-			return false
-		}
-		return data.CompareFields(&row.Fields[idx], &field) == 0
+		ok, err := eval.EvalBool(expr, row, table.Columns)
+		return err == nil && ok
 	}, nil
 }
 
@@ -298,6 +248,30 @@ func columnIndex(columns []string, name string) (int, bool) {
 		}
 	}
 	return -1, false
+}
+
+func validateExpr(expr pars.Expr, table *TableContext) error {
+	switch e := expr.(type) {
+	case pars.BinaryExpr:
+		switch e.Op {
+		case pars.TokenAnd, pars.TokenOr, pars.TokenEq:
+			if err := validateExpr(e.Left, table); err != nil {
+				return err
+			}
+			return validateExpr(e.Right, table)
+		default:
+			return fmt.Errorf("que: unsupported predicate op %v", e.Op)
+		}
+	case pars.IdentExpr:
+		if _, ok := columnIndex(table.Columns, e.Name); !ok {
+			return fmt.Errorf("que: unknown column %s", e.Name)
+		}
+		return nil
+	case pars.LiteralExpr:
+		return nil
+	default:
+		return fmt.Errorf("que: unsupported predicate")
+	}
 }
 
 func findRow(store *row.Store, pred func(*data.Tuple) bool) *data.Tuple {
