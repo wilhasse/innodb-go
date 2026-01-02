@@ -3,6 +3,7 @@ package btr
 import (
 	"bytes"
 	"errors"
+	"sort"
 
 	"github.com/wilhasse/innodb-go/buf"
 	"github.com/wilhasse/innodb-go/fil"
@@ -54,6 +55,9 @@ func (t *PageTree) Insert(key, value []byte) (bool, error) {
 			return false, err
 		}
 		t.RootPage = root
+	}
+	if err := t.ensureRootInitialized(); err != nil {
+		return false, err
 	}
 
 	split, sepKey, rightPage, replaced, err := t.insertPage(t.RootPage, key, value)
@@ -141,7 +145,7 @@ func (t *PageTree) Search(key []byte) ([]byte, bool, error) {
 			_ = h.commit(false)
 			return nil, false, nil
 		}
-		records := collectUserRecords(h.data)
+		records := t.sortRecords(collectUserRecords(h.data))
 		child, ok := findChildPage(records, key, t.Compare)
 		_ = h.commit(false)
 		if !ok {
@@ -194,7 +198,7 @@ func (t *PageTree) Delete(key []byte) (bool, error) {
 			}
 			return true, nil
 		}
-		records := collectUserRecords(h.data)
+		records := t.sortRecords(collectUserRecords(h.data))
 		child, ok := findChildPage(records, key, t.Compare)
 		_ = h.commit(false)
 		if !ok {
@@ -240,7 +244,7 @@ func (t *PageTree) ForEach(fn func(key, value []byte) bool) error {
 		if err != nil {
 			return err
 		}
-		records := collectUserRecords(h.data)
+		records := t.sortRecords(collectUserRecords(h.data))
 		next := page.PageGetNext(h.data)
 		if next == 0 {
 			_ = h.commit(false)
@@ -280,7 +284,7 @@ func (t *PageTree) leftmostLeaf() (uint32, error) {
 			_ = h.commit(false)
 			return pageNo, nil
 		}
-		records := collectUserRecords(h.data)
+		records := t.sortRecords(collectUserRecords(h.data))
 		if len(records) == 0 {
 			_ = h.commit(false)
 			return 0, errors.New("btr: empty internal page")
@@ -370,6 +374,58 @@ func (t *PageTree) maxRecords() int {
 	return t.MaxRecs
 }
 
+func (t *PageTree) sortRecords(records [][]byte) [][]byte {
+	if t == nil || len(records) < 2 {
+		return records
+	}
+	type recItem struct {
+		rec []byte
+		key []byte
+		ok  bool
+	}
+	items := make([]recItem, 0, len(records))
+	for _, recBytes := range records {
+		key, ok := recordKey(recBytes)
+		items = append(items, recItem{rec: recBytes, key: key, ok: ok})
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if !items[i].ok && !items[j].ok {
+			return false
+		}
+		if !items[i].ok {
+			return false
+		}
+		if !items[j].ok {
+			return true
+		}
+		return t.Compare(items[i].key, items[j].key) < 0
+	})
+	for i := range items {
+		records[i] = items[i].rec
+	}
+	return records
+}
+
+func (t *PageTree) refreshNodePtrRecords(records [][]byte) [][]byte {
+	if t == nil || len(records) == 0 {
+		return records
+	}
+	updated := make([][]byte, 0, len(records))
+	for _, recBytes := range records {
+		key, child, ok := decodeNodePtrRecord(recBytes)
+		if !ok {
+			updated = append(updated, recBytes)
+			continue
+		}
+		minKey, err := t.pageMinKey(child)
+		if err != nil || len(minKey) == 0 {
+			minKey = key
+		}
+		updated = append(updated, encodeNodePtrRecord(minKey, child))
+	}
+	return t.sortRecords(updated)
+}
+
 type pageHandle struct {
 	spaceID uint32
 	pageNo  uint32
@@ -455,16 +511,26 @@ func (t *PageTree) pageMinKey(pageNo uint32) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	records := collectUserRecords(h.data)
-	_ = h.commit(false)
+	level := page.PageGetLevel(h.data)
+	records := t.sortRecords(collectUserRecords(h.data))
 	if len(records) == 0 {
+		_ = h.commit(false)
 		return nil, nil
 	}
-	key, ok := recordKey(records[0])
+	if level == 0 {
+		key, ok := recordKey(records[0])
+		_ = h.commit(false)
+		if !ok {
+			return nil, nil
+		}
+		return key, nil
+	}
+	_, child, ok := decodeNodePtrRecord(records[0])
+	_ = h.commit(false)
 	if !ok {
 		return nil, nil
 	}
-	return key, nil
+	return t.pageMinKey(child)
 }
 
 func (t *PageTree) insertPage(pageNo uint32, key, value []byte) (bool, []byte, uint32, bool, error) {
@@ -475,7 +541,7 @@ func (t *PageTree) insertPage(pageNo uint32, key, value []byte) (bool, []byte, u
 	pageBytes := h.data
 	level := page.PageGetLevel(pageBytes)
 	if level == 0 {
-		records := collectUserRecords(pageBytes)
+		records := t.sortRecords(collectUserRecords(pageBytes))
 		idx, exact := findRecordIndex(records, key, t.Compare)
 		if exact {
 			records[idx] = encodeLeafRecord(key, value)
@@ -547,7 +613,7 @@ func (t *PageTree) insertPage(pageNo uint32, key, value []byte) (bool, []byte, u
 		return true, sepKey, rightPage, exact, nil
 	}
 
-	records := collectUserRecords(pageBytes)
+	records := t.sortRecords(collectUserRecords(pageBytes))
 	child, ok := findChildPage(records, key, t.Compare)
 	if !ok {
 		_ = h.commit(false)
@@ -563,9 +629,16 @@ func (t *PageTree) insertPage(pageNo uint32, key, value []byte) (bool, []byte, u
 		return false, nil, fil.NullPageOffset, replaced, nil
 	}
 
-	insertRec := encodeNodePtrRecord(sepKey, rightPage)
-	idx, _ := findRecordIndex(records, sepKey, t.Compare)
-	records = insertRecord(records, idx, insertRec)
+	if split {
+		rightKey, err := t.pageMinKey(rightPage)
+		if err != nil || len(rightKey) == 0 {
+			rightKey = sepKey
+		}
+		insertRec := encodeNodePtrRecord(rightKey, rightPage)
+		idx, _ := findRecordIndex(records, rightKey, t.Compare)
+		records = insertRecord(records, idx, insertRec)
+	}
+	records = t.refreshNodePtrRecords(records)
 	if len(records) <= t.maxRecords() {
 		prev := page.PageGetPrev(pageBytes)
 		next := page.PageGetNext(pageBytes)
