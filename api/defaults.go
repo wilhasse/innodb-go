@@ -5,7 +5,7 @@ import (
 	"strings"
 )
 
-const defaultDataFilePath = "ibdata1:4M:autoextend"
+const defaultDataFilePath = "ibdata1:32M:autoextend"
 
 func defaultFilePreallocate() Bool {
 	raw := strings.TrimSpace(os.Getenv("INNODB_FILE_PREALLOCATE"))
