@@ -75,3 +75,37 @@ func TestSystemTablespaceLifecycle(t *testing.T) {
 		t.Fatalf("Shutdown restart: %v", err)
 	}
 }
+
+func TestSystemTablespaceDefaultPathOnEmptySpec(t *testing.T) {
+	dir := t.TempDir()
+	dataDir := dir + "/"
+	path := filepath.Join(dataDir, "ibdata1")
+
+	initialized = false
+	started = false
+	activeDBFormat = ""
+
+	if err := Init(); err != DB_SUCCESS {
+		t.Fatalf("Init: %v", err)
+	}
+	if err := CfgSet("data_home_dir", dataDir); err != DB_SUCCESS {
+		t.Fatalf("CfgSet data_home_dir: %v", err)
+	}
+	if err := CfgSet("data_file_path", ""); err != DB_SUCCESS {
+		t.Fatalf("CfgSet data_file_path empty: %v", err)
+	}
+	if err := Startup(""); err != DB_SUCCESS {
+		t.Fatalf("Startup: %v", err)
+	}
+
+	exists, err := ibos.FileExists(path)
+	if err != nil || !exists {
+		t.Fatalf("ibdata1 missing: exists=%v err=%v", exists, err)
+	}
+	if got := fil.SpaceGetSize(0); got == 0 {
+		t.Fatalf("space size=%d, want >0", got)
+	}
+	if err := Shutdown(ShutdownNormal); err != DB_SUCCESS {
+		t.Fatalf("Shutdown: %v", err)
+	}
+}

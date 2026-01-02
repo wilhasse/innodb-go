@@ -163,7 +163,7 @@ func registerDefaults() {
 		Name:  "data_file_path",
 		Type:  CfgTypeText,
 		Flag:  CfgFlagReadOnlyAfterStartup,
-		Value: "ibdata1:4M:autoextend",
+		Value: defaultDataFilePath,
 	})
 	registerVar(&ConfigVar{
 		Name:  "data_home_dir",

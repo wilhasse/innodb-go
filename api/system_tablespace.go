@@ -23,7 +23,7 @@ func openSystemTablespace() ErrCode {
 	}
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
-		return DB_SUCCESS
+		spec = defaultDataFilePath
 	}
 	parsed, err := parseDataFilePathSpecs(spec)
 	if err != nil {
