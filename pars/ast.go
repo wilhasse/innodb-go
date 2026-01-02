@@ -14,6 +14,38 @@ type SelectStmt struct {
 
 func (SelectStmt) stmtNode() {}
 
+// InsertStmt represents a basic INSERT statement.
+type InsertStmt struct {
+	Table   string
+	Columns []string
+	Values  []Expr
+}
+
+func (InsertStmt) stmtNode() {}
+
+// Assignment represents a column assignment.
+type Assignment struct {
+	Column string
+	Value  Expr
+}
+
+// UpdateStmt represents a basic UPDATE statement.
+type UpdateStmt struct {
+	Table       string
+	Assignments []Assignment
+	Where       Expr
+}
+
+func (UpdateStmt) stmtNode() {}
+
+// DeleteStmt represents a basic DELETE statement.
+type DeleteStmt struct {
+	Table string
+	Where Expr
+}
+
+func (DeleteStmt) stmtNode() {}
+
 // Expr is a parsed expression node.
 type Expr interface {
 	exprNode()

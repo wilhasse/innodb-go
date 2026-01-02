@@ -26,6 +26,12 @@ const (
 	TokenSelect
 	TokenFrom
 	TokenWhere
+	TokenInsert
+	TokenInto
+	TokenValues
+	TokenUpdate
+	TokenSet
+	TokenDelete
 
 	TokenLParen
 	TokenRParen
@@ -254,4 +260,10 @@ var keywordTokens = map[string]TokenType{
 	"SELECT":    TokenSelect,
 	"FROM":      TokenFrom,
 	"WHERE":     TokenWhere,
+	"INSERT":    TokenInsert,
+	"INTO":      TokenInto,
+	"VALUES":    TokenValues,
+	"UPDATE":    TokenUpdate,
+	"SET":       TokenSet,
+	"DELETE":    TokenDelete,
 }

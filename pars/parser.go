@@ -32,6 +32,12 @@ func (p *Parser) Parse() (Statement, error) {
 	switch p.cur.Type {
 	case TokenSelect:
 		return p.parseSelect()
+	case TokenInsert:
+		return p.parseInsert()
+	case TokenUpdate:
+		return p.parseUpdate()
+	case TokenDelete:
+		return p.parseDelete()
 	default:
 		return nil, fmt.Errorf("pars: unexpected token %v", p.cur.Type)
 	}
@@ -68,6 +74,101 @@ func (p *Parser) parseSelect() (Statement, error) {
 	return &SelectStmt{Columns: cols, Table: table, Where: where}, nil
 }
 
+func (p *Parser) parseInsert() (Statement, error) {
+	if p.cur.Type != TokenInsert {
+		return nil, fmt.Errorf("pars: expected INSERT")
+	}
+	p.nextToken()
+	if p.cur.Type == TokenInto {
+		p.nextToken()
+	}
+	table, err := p.parseIdent()
+	if err != nil {
+		return nil, err
+	}
+	var cols []string
+	if p.cur.Type == TokenLParen {
+		p.nextToken()
+		cols, err = p.parseIdentList()
+		if err != nil {
+			return nil, err
+		}
+		if p.cur.Type != TokenRParen {
+			return nil, fmt.Errorf("pars: expected ) after column list")
+		}
+		p.nextToken()
+	}
+	if p.cur.Type != TokenValues {
+		return nil, fmt.Errorf("pars: expected VALUES")
+	}
+	p.nextToken()
+	if p.cur.Type != TokenLParen {
+		return nil, fmt.Errorf("pars: expected ( after VALUES")
+	}
+	p.nextToken()
+	values, err := p.parseExprList()
+	if err != nil {
+		return nil, err
+	}
+	if p.cur.Type != TokenRParen {
+		return nil, fmt.Errorf("pars: expected ) after VALUES")
+	}
+	p.nextToken()
+	return &InsertStmt{Table: table, Columns: cols, Values: values}, nil
+}
+
+func (p *Parser) parseUpdate() (Statement, error) {
+	if p.cur.Type != TokenUpdate {
+		return nil, fmt.Errorf("pars: expected UPDATE")
+	}
+	p.nextToken()
+	table, err := p.parseIdent()
+	if err != nil {
+		return nil, err
+	}
+	if p.cur.Type != TokenSet {
+		return nil, fmt.Errorf("pars: expected SET")
+	}
+	p.nextToken()
+	assignments, err := p.parseAssignments()
+	if err != nil {
+		return nil, err
+	}
+	var where Expr
+	if p.cur.Type == TokenWhere {
+		p.nextToken()
+		where, err = p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &UpdateStmt{Table: table, Assignments: assignments, Where: where}, nil
+}
+
+func (p *Parser) parseDelete() (Statement, error) {
+	if p.cur.Type != TokenDelete {
+		return nil, fmt.Errorf("pars: expected DELETE")
+	}
+	p.nextToken()
+	if p.cur.Type != TokenFrom {
+		return nil, fmt.Errorf("pars: expected FROM")
+	}
+	p.nextToken()
+	table, err := p.parseIdent()
+	if err != nil {
+		return nil, err
+	}
+	var where Expr
+	if p.cur.Type == TokenWhere {
+		p.nextToken()
+		where, err = p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+	}
+	return &DeleteStmt{Table: table, Where: where}, nil
+}
+
 func (p *Parser) parseColumns() ([]string, error) {
 	if p.cur.Type == TokenStar {
 		p.nextToken()
@@ -86,6 +187,62 @@ func (p *Parser) parseColumns() ([]string, error) {
 		p.nextToken()
 	}
 	return cols, nil
+}
+
+func (p *Parser) parseIdentList() ([]string, error) {
+	var cols []string
+	for {
+		name, err := p.parseIdent()
+		if err != nil {
+			return nil, err
+		}
+		cols = append(cols, name)
+		if p.cur.Type != TokenComma {
+			break
+		}
+		p.nextToken()
+	}
+	return cols, nil
+}
+
+func (p *Parser) parseExprList() ([]Expr, error) {
+	var values []Expr
+	for {
+		val, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		values = append(values, val)
+		if p.cur.Type != TokenComma {
+			break
+		}
+		p.nextToken()
+	}
+	return values, nil
+}
+
+func (p *Parser) parseAssignments() ([]Assignment, error) {
+	var assigns []Assignment
+	for {
+		col, err := p.parseIdent()
+		if err != nil {
+			return nil, err
+		}
+		if p.cur.Type != TokenEq {
+			return nil, fmt.Errorf("pars: expected = in assignment")
+		}
+		p.nextToken()
+		val, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		assigns = append(assigns, Assignment{Column: col, Value: val})
+		if p.cur.Type != TokenComma {
+			break
+		}
+		p.nextToken()
+	}
+	return assigns, nil
 }
 
 func (p *Parser) parseExpr() (Expr, error) {
