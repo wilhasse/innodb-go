@@ -28,7 +28,7 @@ func TestStartupRunsRecoveryOnCrash(t *testing.T) {
 	if err := Startup("barracuda"); err != DB_SUCCESS {
 		t.Fatalf("Startup: %v", err)
 	}
-	pageNo := uint32(1000)
+	pageNo := uint32(fil.SpaceGetSize(0) + 1000)
 	log.ReserveAndWriteFast(buildMlogStringRecord(0, pageNo, 128, []byte("x")))
 	log.FlushUpTo(log.CurrentLSN())
 

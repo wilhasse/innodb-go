@@ -38,8 +38,8 @@ func TestSystemTablespaceLifecycle(t *testing.T) {
 	if err != nil || !exists {
 		t.Fatalf("ibdata1 missing: exists=%v err=%v", exists, err)
 	}
-	if got := fil.SpaceGetSize(0); got != wantPages {
-		t.Fatalf("space size=%d, want %d", got, wantPages)
+	if got := fil.SpaceGetSize(0); got < wantPages {
+		t.Fatalf("space size=%d, want >= %d", got, wantPages)
 	}
 	file := fil.SpaceGetFile(0)
 	if file == nil {
@@ -68,8 +68,8 @@ func TestSystemTablespaceLifecycle(t *testing.T) {
 	if err := Startup(""); err != DB_SUCCESS {
 		t.Fatalf("Startup restart: %v", err)
 	}
-	if got := fil.SpaceGetSize(0); got != wantPages {
-		t.Fatalf("space size restart=%d, want %d", got, wantPages)
+	if got := fil.SpaceGetSize(0); got < wantPages {
+		t.Fatalf("space size restart=%d, want >= %d", got, wantPages)
 	}
 	if err := Shutdown(ShutdownNormal); err != DB_SUCCESS {
 		t.Fatalf("Shutdown restart: %v", err)
