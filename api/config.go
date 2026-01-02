@@ -196,6 +196,12 @@ func registerDefaults() {
 		Value: IBTrue,
 	})
 	registerVar(&ConfigVar{
+		Name:  "file_preallocate",
+		Type:  CfgTypeBool,
+		Flag:  CfgFlagNone,
+		Value: defaultFilePreallocate(),
+	})
+	registerVar(&ConfigVar{
 		Name:  "flush_log_at_trx_commit",
 		Type:  CfgTypeUlint,
 		Flag:  CfgFlagNone,

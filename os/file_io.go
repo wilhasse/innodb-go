@@ -3,8 +3,8 @@ package os
 import (
 	"errors"
 	"io"
-	"path/filepath"
 	stdos "os"
+	"path/filepath"
 	"sync/atomic"
 )
 
@@ -156,6 +156,37 @@ func FileSize(file File) (int64, error) {
 		return 0, err
 	}
 	return info.Size(), nil
+}
+
+// FilePreallocate grows a file to sizeBytes by writing zero blocks.
+func FilePreallocate(file File, sizeBytes int64) error {
+	if file == nil {
+		return errors.New("os: nil file")
+	}
+	if sizeBytes <= 0 {
+		return nil
+	}
+	curSize, err := FileSize(file)
+	if err != nil {
+		return err
+	}
+	if curSize >= sizeBytes {
+		return nil
+	}
+	const chunkSize = 1 << 20
+	zero := make([]byte, chunkSize)
+	for offset := curSize; offset < sizeBytes; {
+		remain := sizeBytes - offset
+		n := chunkSize
+		if remain < int64(n) {
+			n = int(remain)
+		}
+		if _, err := FileWriteAt(file, zero[:n], offset); err != nil {
+			return err
+		}
+		offset += int64(n)
+	}
+	return nil
 }
 
 // FileExists reports whether a file exists.

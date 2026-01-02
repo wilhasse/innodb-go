@@ -67,6 +67,10 @@ func Startup(format string) ErrCode {
 	if err := CfgGet("checksums", &checksums); err == DB_SUCCESS {
 		fil.SetChecksumsEnabled(checksums == IBTrue)
 	}
+	var prealloc Bool
+	if err := CfgGet("file_preallocate", &prealloc); err == DB_SUCCESS {
+		fsp.SetPreallocateFiles(prealloc == IBTrue)
+	}
 	configureLog()
 	log.Init()
 	if err := log.InitErr(); err != nil {

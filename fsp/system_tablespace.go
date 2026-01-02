@@ -265,6 +265,9 @@ func ensureFileSize(file ibos.File, sizeBytes uint64) error {
 	if curSize >= int64(sizeBytes) {
 		return nil
 	}
+	if preallocateFilesEnabled() {
+		return ibos.FilePreallocate(file, int64(sizeBytes))
+	}
 	_, err = ibos.FileWriteAt(file, []byte{0}, int64(sizeBytes)-1)
 	return err
 }

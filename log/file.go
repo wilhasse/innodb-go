@@ -111,6 +111,10 @@ func openLogFile(cfg Config) (ibos.File, logHeader, error) {
 			_ = ibos.FileClose(file)
 			return nil, logHeader{}, err
 		}
+		if err := preallocateLogFile(file, hdr, cfg); err != nil {
+			_ = ibos.FileClose(file)
+			return nil, logHeader{}, err
+		}
 		return file, hdr, nil
 	}
 	file, err := ibos.FileCreateSimple(path, ibos.FileOpen, ibos.FileReadWrite)
@@ -122,5 +126,23 @@ func openLogFile(cfg Config) (ibos.File, logHeader, error) {
 		_ = ibos.FileClose(file)
 		return nil, logHeader{}, err
 	}
+	if err := preallocateLogFile(file, hdr, cfg); err != nil {
+		_ = ibos.FileClose(file)
+		return nil, logHeader{}, err
+	}
 	return file, hdr, nil
+}
+
+func preallocateLogFile(file ibos.File, hdr logHeader, cfg Config) error {
+	if file == nil || !cfg.Preallocate {
+		return nil
+	}
+	size := hdr.FileSize
+	if size == 0 {
+		size = cfg.FileSize
+	}
+	if size == 0 {
+		return nil
+	}
+	return ibos.FilePreallocate(file, int64(logHeaderSize)+int64(size))
 }

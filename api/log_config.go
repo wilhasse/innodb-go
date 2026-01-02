@@ -11,14 +11,17 @@ func configureLog() {
 	_ = CfgGet("log_files_in_group", &files)
 	var bufferSize Ulint
 	_ = CfgGet("log_buffer_size", &bufferSize)
+	var prealloc Bool
+	_ = CfgGet("file_preallocate", &prealloc)
 	dataDir := dataHomeDir()
 	enabled := fileSize > 0 && (dataDir != "." || logDir != "")
 	log.Configure(log.Config{
-		Enabled:    enabled,
-		DataDir:    dataDir,
-		LogDir:     logDir,
-		FileSize:   uint64(fileSize),
-		Files:      int(files),
-		BufferSize: uint64(bufferSize),
+		Enabled:     enabled,
+		DataDir:     dataDir,
+		LogDir:      logDir,
+		FileSize:    uint64(fileSize),
+		Files:       int(files),
+		BufferSize:  uint64(bufferSize),
+		Preallocate: prealloc == IBTrue,
 	})
 }
