@@ -68,10 +68,7 @@ func mtrWriteLog(m *Mtr) {
 			}
 		}
 	}
-	end := log.Close()
-	if m.LogMode == LogAll {
-		log.FlushUpTo(end)
-	}
+	log.Close()
 }
 
 // GetLogMode returns the current logging mode.

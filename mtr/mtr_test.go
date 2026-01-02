@@ -88,8 +88,9 @@ func TestMtrCommitWritesLog(t *testing.T) {
 	if len(entries[0].Data) == 0 || entries[0].Data[0]&MlogSingleRecFlag == 0 {
 		t.Fatalf("expected single-rec flag on log entry")
 	}
-	if flushed := log.FlushUpTo(0); flushed != log.CurrentLSN() {
-		t.Fatalf("expected flushed=%d, got %d", log.CurrentLSN(), flushed)
+	expected := log.CurrentLSN()
+	if flushed := log.FlushUpTo(expected); flushed != expected {
+		t.Fatalf("expected flushed=%d, got %d", expected, flushed)
 	}
 }
 

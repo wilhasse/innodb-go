@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/wilhasse/innodb-go/lock"
+	"github.com/wilhasse/innodb-go/log"
 	"github.com/wilhasse/innodb-go/trx"
 )
 
@@ -36,6 +37,7 @@ func TrxCommit(ibTrx *trx.Trx) ErrCode {
 		return DB_ERROR
 	}
 	trx.TrxCommit(ibTrx)
+	flushLogAtCommit()
 	lock.ReleaseAll(ibTrx)
 	clearSchemaLock(ibTrx)
 	purgeIfNeeded()
@@ -84,4 +86,15 @@ func TrxRelease(ibTrx *trx.Trx) ErrCode {
 	lock.ReleaseAll(ibTrx)
 	trx.TrxRelease(ibTrx)
 	return DB_SUCCESS
+}
+
+func flushLogAtCommit() {
+	var level Ulint
+	if err := CfgGet("flush_log_at_trx_commit", &level); err != DB_SUCCESS {
+		return
+	}
+	switch level {
+	case 1, 2:
+		log.FlushUpTo(log.CurrentLSN())
+	}
 }
