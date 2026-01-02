@@ -9,6 +9,7 @@ import (
 	"github.com/wilhasse/innodb-go/btr"
 	"github.com/wilhasse/innodb-go/dict"
 	"github.com/wilhasse/innodb-go/fil"
+	ibos "github.com/wilhasse/innodb-go/os"
 	"github.com/wilhasse/innodb-go/row"
 	"github.com/wilhasse/innodb-go/trx"
 )
@@ -216,6 +217,10 @@ func TableCreate(_ *trx.Trx, schema *TableSchema, tableID *uint64) ErrCode {
 	if _, ok := db.Tables[strings.ToLower(schema.Name)]; ok {
 		return DB_TABLE_IS_BEING_USED
 	}
+	if err := writeDDLLogEntry(ddlLogEntry{Op: ddlOpCreate, Table: schema.Name}); err != nil {
+		return DB_ERROR
+	}
+	defer clearDDLLog()
 	dictTableID, err := dict.DictHdrGetNewID(dict.DictHdrTableID)
 	if err != nil {
 		return DB_ERROR
@@ -319,6 +324,10 @@ func TableDrop(_ *trx.Trx, name string) ErrCode {
 	if table == nil {
 		return DB_TABLE_NOT_FOUND
 	}
+	if err := writeDDLLogEntry(ddlLogEntry{Op: ddlOpDrop, Table: name}); err != nil {
+		return DB_ERROR
+	}
+	defer clearDDLLog()
 	if table.Store != nil {
 		_ = table.Store.DeleteFile()
 	}
@@ -332,6 +341,75 @@ func TableDrop(_ *trx.Trx, name string) ErrCode {
 		_ = dict.DictPersistTableDrop(dictTable)
 	}
 	delete(db.Tables, strings.ToLower(name))
+	return DB_SUCCESS
+}
+
+// TableRename renames a table definition and its backing file.
+func TableRename(_ *trx.Trx, oldName, newName string) ErrCode {
+	oldDBName, _ := splitTableName(oldName)
+	newDBName, _ := splitTableName(newName)
+	if oldDBName == "" || newDBName == "" {
+		return DB_INVALID_INPUT
+	}
+	schemaMu.Lock()
+	defer schemaMu.Unlock()
+
+	oldDB := databases[strings.ToLower(oldDBName)]
+	if oldDB == nil {
+		return DB_TABLE_NOT_FOUND
+	}
+	table := oldDB.Tables[strings.ToLower(oldName)]
+	if table == nil {
+		return DB_TABLE_NOT_FOUND
+	}
+	newDB := databases[strings.ToLower(newDBName)]
+	if newDB == nil {
+		newDB = &Database{Name: newDBName, Tables: map[string]*Table{}}
+		databases[strings.ToLower(newDBName)] = newDB
+	}
+	if _, exists := newDB.Tables[strings.ToLower(newName)]; exists {
+		return DB_TABLE_IS_BEING_USED
+	}
+	if err := writeDDLLogEntry(ddlLogEntry{Op: ddlOpRename, Table: oldName, NewTable: newName}); err != nil {
+		return DB_ERROR
+	}
+	defer clearDDLLog()
+
+	if table.Store != nil {
+		_ = table.Store.CloseFile()
+	}
+	if filePerTableEnabled() {
+		oldPath, errOld := tableFilePath(oldName)
+		newPath, errNew := tableFilePath(newName)
+		if errOld == DB_SUCCESS && errNew == DB_SUCCESS && oldPath != "" && newPath != "" {
+			if exists, _ := ibos.FileExists(oldPath); exists {
+				_ = ibos.FileCreateSubdirsIfNeeded(newPath)
+				_ = ibos.FileRename(oldPath, newPath)
+			}
+		}
+	}
+	if table.SpaceID != 0 {
+		_ = fil.SpaceRename(table.SpaceID, newName)
+	}
+	if table.Schema != nil {
+		table.Schema.Name = newName
+	}
+
+	if oldDB == newDB {
+		delete(oldDB.Tables, strings.ToLower(oldName))
+		oldDB.Tables[strings.ToLower(newName)] = table
+	} else {
+		delete(oldDB.Tables, strings.ToLower(oldName))
+		newDB.Tables[strings.ToLower(newName)] = table
+	}
+	if dictTable := dict.DictTableGet(oldName); dictTable != nil {
+		_ = dict.DictPersistTableRename(dictTable, newName)
+	}
+	if table.Store != nil && filePerTableEnabled() {
+		if path, err := tableFilePath(newName); err == DB_SUCCESS && path != "" {
+			_ = table.Store.AttachFile(path)
+		}
+	}
 	return DB_SUCCESS
 }
 

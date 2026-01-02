@@ -57,4 +57,5 @@ func Shutdown() {
 		_ = ibos.FileClose(file)
 	}
 	System = nil
+	RecvSysVarInit()
 }

@@ -136,6 +136,32 @@ func DictPersistIndexCreate(table *Table, index *Index) error {
 	return DictPersist()
 }
 
+// DictPersistTableRename updates a table name and persists SYS_* rows.
+func DictPersistTableRename(table *Table, newName string) error {
+	if table == nil || table.Name == "" || newName == "" {
+		return ErrInvalidName
+	}
+	if DictSys == nil {
+		return ErrTableNotFound
+	}
+	DictSys.mu.Lock()
+	if DictSys.Tables == nil {
+		DictSys.Tables = make(map[string]*Table)
+	}
+	if _, exists := DictSys.Tables[newName]; exists {
+		DictSys.mu.Unlock()
+		return ErrTableExists
+	}
+	removeTableSysRows(table)
+	delete(DictSys.Tables, table.Name)
+	table.Name = newName
+	addTableSysRows(table)
+	dedupeSysRows()
+	DictSys.Tables[newName] = table
+	DictSys.mu.Unlock()
+	return DictPersist()
+}
+
 func buildPersistPayload() *sysPersist {
 	payload := &sysPersist{Header: DictSys.Header}
 	payload.Tables = encodeRows(DictSys.SysRows.Tables)

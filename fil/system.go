@@ -106,6 +106,27 @@ func SpaceCreate(name string, id uint32, zipSize uint32, purpose uint32) bool {
 	return true
 }
 
+// SpaceRename updates the name for a tablespace.
+func SpaceRename(id uint32, newName string) error {
+	if newName == "" {
+		return errors.New("fil: empty space name")
+	}
+	sys := ensureSystem()
+	sys.mu.Lock()
+	defer sys.mu.Unlock()
+	space := sys.spacesByID[id]
+	if space == nil {
+		return errors.New("fil: space not found")
+	}
+	if _, exists := sys.spacesByName[newName]; exists {
+		return errors.New("fil: space name exists")
+	}
+	delete(sys.spacesByName, space.Name)
+	space.Name = newName
+	sys.spacesByName[newName] = space
+	return nil
+}
+
 // SpaceDrop removes a space from the cache.
 func SpaceDrop(id uint32) {
 	sys := ensureSystem()
