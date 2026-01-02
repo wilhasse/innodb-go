@@ -190,4 +190,75 @@ func rebuildFromSysRows() {
 		}
 		idx.Fields[idxPos] = name
 	}
+
+	pruneInvalidTables(tableByID)
+}
+
+func pruneInvalidTables(tableByID map[uint64]*Table) {
+	if DictSys == nil || tableByID == nil {
+		return
+	}
+	for id, table := range tableByID {
+		if table == nil || table.Name == "" || !columnsComplete(table) {
+			delete(DictSys.Tables, table.Name)
+			delete(tableByID, id)
+			continue
+		}
+		if !pruneInvalidIndexes(table) {
+			delete(DictSys.Tables, table.Name)
+			delete(tableByID, id)
+		}
+	}
+}
+
+func columnsComplete(table *Table) bool {
+	if table == nil {
+		return false
+	}
+	for _, col := range table.Columns {
+		if col.Name == "" {
+			return false
+		}
+	}
+	return true
+}
+
+func pruneInvalidIndexes(table *Table) bool {
+	if table == nil || table.Indexes == nil {
+		return false
+	}
+	hasClustered := false
+	for name, idx := range table.Indexes {
+		if idx == nil || len(idx.Fields) == 0 {
+			delete(table.Indexes, name)
+			continue
+		}
+		valid := true
+		for _, field := range idx.Fields {
+			if field == "" || !tableHasColumn(table, field) {
+				valid = false
+				break
+			}
+		}
+		if !valid {
+			delete(table.Indexes, name)
+			continue
+		}
+		if idx.Clustered {
+			hasClustered = true
+		}
+	}
+	return hasClustered
+}
+
+func tableHasColumn(table *Table, name string) bool {
+	if table == nil || name == "" {
+		return false
+	}
+	for _, col := range table.Columns {
+		if strings.EqualFold(col.Name, name) {
+			return true
+		}
+	}
+	return false
 }
