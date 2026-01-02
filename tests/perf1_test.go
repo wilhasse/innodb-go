@@ -3,15 +3,16 @@ package tests
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/wilhasse/innodb-go/api"
 )
 
 const (
-	perfDB    = "test"
+	perfDB     = "test"
 	perfTable1 = "perf_t1"
 	perfTable2 = "perf_t2"
-	perfRows  = 100
+	perfRows   = 100
 )
 
 func TestPerf1Harness(t *testing.T) {
@@ -26,6 +27,8 @@ func TestPerf1Harness(t *testing.T) {
 	if err := api.Startup("barracuda"); err != api.DB_SUCCESS {
 		t.Fatalf("Startup: %v", err)
 	}
+	api.StatsEnable(true)
+	api.StatsReset()
 	if err := api.DatabaseCreate(perfDB); err != api.DB_SUCCESS {
 		t.Fatalf("DatabaseCreate: %v", err)
 	}
@@ -38,16 +41,22 @@ func TestPerf1Harness(t *testing.T) {
 	if err := createPerfTable(t2); err != api.DB_SUCCESS {
 		t.Fatalf("create t2: %v", err)
 	}
+	start := time.Now()
 	if err := insertPerfRows(t1, perfRows); err != api.DB_SUCCESS {
 		t.Fatalf("insert t1: %v", err)
 	}
+	api.StatsCollect(api.OpInsert, time.Since(start))
+	start = time.Now()
 	if err := copyPerfRows(t1, t2); err != api.DB_SUCCESS {
 		t.Fatalf("copy rows: %v", err)
 	}
+	api.StatsCollect(api.OpCopy, time.Since(start))
+	start = time.Now()
 	count, err := joinPerfCount(t1, t2)
 	if err != api.DB_SUCCESS {
 		t.Fatalf("join count: %v", err)
 	}
+	api.StatsCollect(api.OpJoin, time.Since(start))
 	if count != perfRows {
 		t.Fatalf("join count=%d want=%d", count, perfRows)
 	}
@@ -60,6 +69,11 @@ func TestPerf1Harness(t *testing.T) {
 	}
 	if err := api.DatabaseDrop(perfDB); err != api.DB_SUCCESS {
 		t.Fatalf("DatabaseDrop: %v", err)
+	}
+
+	stats := api.StatsSnapshot()
+	if stats.Insert.Count != 1 || stats.Copy.Count != 1 || stats.Join.Count != 1 {
+		t.Fatalf("stats=%+v", stats)
 	}
 }
 
