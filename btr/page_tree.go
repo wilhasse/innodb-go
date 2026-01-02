@@ -216,6 +216,20 @@ func (t *PageTree) ForEach(fn func(key, value []byte) bool) error {
 	if err := t.ensureRootInitialized(); err != nil {
 		return err
 	}
+	root, err := t.fetchPage(t.RootPage)
+	if err != nil {
+		return err
+	}
+	rootType := page.PageGetType(root.data)
+	if rootType == fil.PageTypeAllocated {
+		_ = root.commit(false)
+		return nil
+	}
+	if rootType != fil.PageTypeIndex {
+		_ = root.commit(false)
+		return errors.New("btr: root not an index page")
+	}
+	_ = root.commit(false)
 	start, err := t.leftmostLeaf()
 	if err != nil {
 		return err
@@ -228,6 +242,10 @@ func (t *PageTree) ForEach(fn func(key, value []byte) bool) error {
 		}
 		records := collectUserRecords(h.data)
 		next := page.PageGetNext(h.data)
+		if next == 0 {
+			_ = h.commit(false)
+			return errors.New("btr: invalid next page")
+		}
 		for _, recBytes := range records {
 			key, val, ok := decodeLeafRecord(recBytes)
 			if !ok {
@@ -252,6 +270,10 @@ func (t *PageTree) leftmostLeaf() (uint32, error) {
 		h, err := t.fetchPage(pageNo)
 		if err != nil {
 			return 0, err
+		}
+		if page.PageGetType(h.data) != fil.PageTypeIndex {
+			_ = h.commit(false)
+			return 0, errors.New("btr: non-index page")
 		}
 		level := page.PageGetLevel(h.data)
 		if level == 0 {
